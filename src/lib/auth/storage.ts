@@ -3,6 +3,9 @@ const REFRESH_KEY = "freelr.refresh";
 const EXPIRES_KEY = "freelr.expiresAt";
 const PERMISSIONS_KEY = "freelr.permissions";
 const REMEMBER_KEY = "freelr.remember";
+const USER_ID_KEY = "freelr.userId";
+const BUSINESS_ID_KEY = "freelr.businessId";
+const CURRENCY_KEY = "freelr.currency";
 
 interface SessionInput {
   token: string;
@@ -51,6 +54,36 @@ export const authStorage = {
     }
   },
 
+  getUserId(): string | null {
+    return read(USER_ID_KEY);
+  },
+
+  setUserId(id: string): void {
+    const store = getStore();
+    if (!store) return;
+    store.setItem(USER_ID_KEY, id);
+  },
+
+  getBusinessId(): string | null {
+    return read(BUSINESS_ID_KEY);
+  },
+
+  setBusinessId(id: string): void {
+    const store = getStore();
+    if (!store) return;
+    store.setItem(BUSINESS_ID_KEY, id);
+  },
+
+  getCurrency(): string | null {
+    return read(CURRENCY_KEY);
+  },
+
+  setCurrency(code: string): void {
+    const store = getStore();
+    if (!store) return;
+    store.setItem(CURRENCY_KEY, code);
+  },
+
   setSession(input: SessionInput) {
     const { token, refreshToken, expiresAt, permissions, remember = false } = input;
     const store = getStore(remember);
@@ -70,6 +103,9 @@ export const authStorage = {
       s.removeItem(REFRESH_KEY);
       s.removeItem(EXPIRES_KEY);
       s.removeItem(PERMISSIONS_KEY);
+      s.removeItem(USER_ID_KEY);
+      s.removeItem(BUSINESS_ID_KEY);
+      s.removeItem(CURRENCY_KEY);
     });
     window.localStorage.removeItem(REMEMBER_KEY);
   },

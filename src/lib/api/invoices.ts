@@ -1,16 +1,41 @@
 import { api } from "./client";
-import type { Invoice, RecordPaymentPayload } from "./types";
+import type { CreateInvoicePayload, Invoice, RecordPaymentPayload } from "./types";
 
 export const invoicesApi = {
-  // REVIEW: check if this matches the backend before connecting
   list: (businessId: string) =>
     api.get<Invoice[]>("/api/v1/invoices", { query: { businessId } }),
-  // REVIEW: check if this matches the backend before connecting
-  create: (payload: { clientName: string; items: { description: string; amount: number }[] }) =>
-    api.post<Invoice>("/api/v1/invoices", payload),
-  // REVIEW: check if this matches the backend before connecting
-  send: (id: string) => api.post<{ ok: true }>(`/api/v1/invoices/${id}/send`),
-  // REVIEW: check if this matches the backend before connecting
-  recordPayment: (id: string, payload: RecordPaymentPayload) =>
-    api.post<{ ok: true }>(`/api/v1/invoices/${id}/payment`, payload),
+
+  getById: (invoiceId: string, businessId: string) =>
+    api.get<Invoice>(`/api/v1/invoices/${invoiceId}`, { query: { businessId } }),
+
+  create: (payload: CreateInvoicePayload) =>
+    api.post<{ id: string }>("/api/v1/invoices", payload),
+
+  send: (invoiceId: string, businessId: string, updatedBy: string) =>
+    api.post<void>(`/api/v1/invoices/${invoiceId}/send`, undefined, {
+      query: { businessId, updatedBy },
+    }),
+
+  recordPayment: (invoiceId: string, payload: RecordPaymentPayload) =>
+    api.post<void>(`/api/v1/invoices/${invoiceId}/payment`, payload),
+
+  generatePdf: (invoiceId: string, businessId: string, updatedBy: string) =>
+    api.post<{ pdfUrl: string }>(`/api/v1/invoices/${invoiceId}/generate-pdf`, undefined, {
+      query: { businessId, updatedBy },
+    }),
+
+  generateQr: (invoiceId: string, businessId: string, updatedBy: string) =>
+    api.post<{ qrCodeUrl: string }>(`/api/v1/invoices/${invoiceId}/generate-qr`, undefined, {
+      query: { businessId, updatedBy },
+    }),
+
+  generatePaymentLink: (invoiceId: string, businessId: string, updatedBy: string) =>
+    api.post<{ paymentLink: string }>(`/api/v1/invoices/${invoiceId}/payment-link`, undefined, {
+      query: { businessId, updatedBy },
+    }),
+
+  delete: (invoiceId: string, businessId: string, deletedBy: string) =>
+    api.delete<void>(`/api/v1/invoices/${invoiceId}`, {
+      query: { businessId, deletedBy },
+    }),
 };
