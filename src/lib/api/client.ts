@@ -143,3 +143,53 @@ export function flattenProblemErrors(err: unknown): string[] {
   }
   return out;
 }
+
+const ARABIC_RANGE = /[؀-ۿ]/;
+
+/** Translate any thrown error to a user-facing Arabic message. */
+export function apiErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) {
+    return err instanceof Error && err.message
+      ? err.message
+      : "حدث خطأ غير متوقع.";
+  }
+
+  if (err.detail && ARABIC_RANGE.test(err.detail)) return err.detail;
+  if (err.title && ARABIC_RANGE.test(err.title)) return err.title;
+
+  const validationMessages = flattenProblemErrors(err).filter((m) =>
+    ARABIC_RANGE.test(m),
+  );
+  if (validationMessages.length) return validationMessages.join("، ");
+
+  switch (err.status) {
+    case 0:
+      return "تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت.";
+    case 400:
+      return "البيانات المرسلة غير صحيحة.";
+    case 401:
+      return "انتهت جلستك. يرجى تسجيل الدخول مجدداً.";
+    case 403:
+      return "ليس لديك صلاحية للوصول إلى هذا المورد.";
+    case 404:
+      return "لم يتم العثور على البيانات المطلوبة.";
+    case 405:
+      return "العملية غير مدعومة من الخادم.";
+    case 408:
+      return "انتهت مهلة الطلب. حاول مرة أخرى.";
+    case 409:
+      return "البيانات تتعارض مع ما هو موجود مسبقاً.";
+    case 422:
+      return "تعذر معالجة البيانات المرسلة.";
+    case 429:
+      return "عدد كبير من الطلبات. الرجاء المحاولة لاحقاً.";
+    case 500:
+      return "حدث خطأ في الخادم. حاول مرة أخرى لاحقاً.";
+    case 502:
+    case 503:
+    case 504:
+      return "الخادم غير متاح حالياً. حاول لاحقاً.";
+    default:
+      return "حدث خطأ غير متوقع.";
+  }
+}

@@ -1,15 +1,16 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Loader2, Wallet } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Loader2, RefreshCw, Wallet } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFetch } from "@/lib/hooks/use-fetch";
 import { dashboardApi } from "@/lib/api/dashboard";
 import { invoicesApi } from "@/lib/api/invoices";
 import { forecastApi } from "@/lib/api/forecast";
-import { isApiConfigured } from "@/lib/api/client";
+import { apiErrorMessage, isApiConfigured } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
   MOCK_CHART,
@@ -60,18 +61,23 @@ function formatDate(dateStr: string) {
 export function OverviewTab() {
   const { businessId, currency } = useAuth();
   const apiOn = isApiConfigured() && !!businessId;
+  const demoMode = !apiOn;
 
-  const { data: overviewData, isLoading, error } = useFetch<DashboardOverview>(
+  const { data: overviewData, isLoading, error: overviewError, refetch: refetchOverview } = useFetch<DashboardOverview>(
     () => dashboardApi.overview(businessId!),
-    { fallback: MOCK_DASHBOARD, enabled: apiOn, cacheKey: businessId ?? "mock" },
+    {
+      fallback: demoMode ? MOCK_DASHBOARD : undefined,
+      enabled: apiOn,
+      cacheKey: businessId ?? "mock",
+    },
   );
 
-  const { data: chartsData } = useFetch<DashboardChartsData>(
+  const { data: chartsData, error: chartsError } = useFetch<DashboardChartsData>(
     () => dashboardApi.charts(businessId!, 6),
     { enabled: apiOn, cacheKey: businessId ?? "mock" },
   );
 
-  const { data: invoicesData } = useFetch<Invoice[]>(
+  const { data: invoicesData, error: invoicesError } = useFetch<Invoice[]>(
     () => invoicesApi.list(businessId!),
     { enabled: apiOn, cacheKey: businessId ?? "mock" },
   );
@@ -81,29 +87,48 @@ export function OverviewTab() {
     { enabled: apiOn, cacheKey: `forecast-${businessId}` },
   );
 
-  const { data: dashboardAlerts } = useFetch<Alert[]>(
+  const { data: dashboardAlerts, error: alertsError } = useFetch<Alert[]>(
     () => dashboardApi.alerts(businessId!, false),
     { enabled: apiOn, cacheKey: `dash-alerts-${businessId}` },
   );
 
   const generatingForecast = useRef(false);
   useEffect(() => {
-    // Wait until GET /forecast finishes, then regenerate to get fresh Arabic recommendations
     if (!apiOn || forecastLoading || generatingForecast.current) return;
     generatingForecast.current = true;
-    forecastApi.generate(businessId!).then(setForecastData).catch(() => {}).finally(() => {
-      generatingForecast.current = false;
-    });
+    forecastApi
+      .generate(businessId!)
+      .then(setForecastData)
+      .catch((err) => {
+        toast.error(`تعذر توليد توصيات الذكاء الاصطناعي: ${apiErrorMessage(err)}`);
+      })
+      .finally(() => {
+        generatingForecast.current = false;
+      });
   }, [apiOn, businessId, forecastLoading, setForecastData]);
 
-  const overview = overviewData ?? MOCK_DASHBOARD;
-  const usingMock = !apiOn || (!!error && !overviewData);
+  // Surface non-critical errors as Arabic toasts (once each)
+  const toastedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const announce = (key: string, prefix: string, err: Error | null) => {
+      if (!err || toastedRef.current.has(key)) return;
+      toastedRef.current.add(key);
+      toast.error(`${prefix}: ${apiErrorMessage(err)}`);
+    };
+    announce("charts", "تعذر تحميل الرسم البياني", chartsError);
+    announce("invoices", "تعذر تحميل الفواتير الأخيرة", invoicesError);
+    announce("alerts", "تعذر تحميل التنبيهات", alertsError);
+  }, [chartsError, invoicesError, alertsError]);
 
-  const incomeChangePct = overview.incomeChangePercent ?? MOCK_INCOME_CHANGE_PCT;
-  const expenseChangePct = overview.expenseChangePercent ?? MOCK_EXPENSES_CHANGE_PCT;
-  const profitMarginPct = overview.netCashflow > 0 && overview.totalIncome > 0
+  const overview = overviewData;
+
+  const incomeChangePct = overview?.incomeChangePercent ?? (demoMode ? MOCK_INCOME_CHANGE_PCT : 0);
+  const expenseChangePct = overview?.expenseChangePercent ?? (demoMode ? MOCK_EXPENSES_CHANGE_PCT : 0);
+  const profitMarginPct = overview && overview.netCashflow > 0 && overview.totalIncome > 0
     ? Math.round((overview.netCashflow / overview.totalIncome) * 100)
-    : MOCK_PROFIT_MARGIN_PCT;
+    : demoMode
+      ? MOCK_PROFIT_MARGIN_PCT
+      : 0;
 
   const chartData = useMemo(() => {
     if (chartsData?.incomeByMonth?.length) {
@@ -113,8 +138,11 @@ export function OverviewTab() {
         مصروفات: chartsData.expensesByMonth[i]?.total ?? 0,
       }));
     }
-    return MOCK_CHART.map((p) => ({ name: p.name, دخل: p.income, مصروفات: p.expenses }));
-  }, [chartsData]);
+    if (demoMode) {
+      return MOCK_CHART.map((p) => ({ name: p.name, دخل: p.income, مصروفات: p.expenses }));
+    }
+    return [];
+  }, [chartsData, demoMode]);
 
   const recentInvoices = useMemo(() => {
     if (invoicesData?.length) {
@@ -128,8 +156,9 @@ export function OverviewTab() {
         status: inv.status,
       }));
     }
-    return MOCK_RECENT_INVOICES;
-  }, [invoicesData]);
+    if (demoMode) return MOCK_RECENT_INVOICES;
+    return [];
+  }, [invoicesData, currency, demoMode]);
 
   const insights: AIInsight[] = useMemo(() => {
     if (!forecastData?.recommendations?.length) return [];
@@ -188,11 +217,52 @@ export function OverviewTab() {
     );
   }
 
+  if (apiOn && overviewError && !overview) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+          <AlertCircle className="w-6 h-6 text-destructive" />
+        </div>
+        <div className="space-y-1 max-w-md">
+          <h3 className="font-bold text-base">تعذر تحميل البيانات</h3>
+          <p className="text-sm text-muted-foreground">{apiErrorMessage(overviewError)}</p>
+        </div>
+        <Button onClick={() => void refetchOverview()} variant="outline" className="gap-2">
+          <RefreshCw className="w-4 h-4" />
+          إعادة المحاولة
+        </Button>
+      </div>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
+        لا توجد بيانات لعرضها بعد.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {usingMock && (
+      {demoMode && (
         <div className="text-xs text-muted-foreground bg-secondary/40 border border-border/50 rounded-md px-3 py-2">
           يتم عرض بيانات تجريبية — سيتم استبدالها بالبيانات الحقيقية عند ربط الواجهة بالخادم.
+        </div>
+      )}
+
+      {apiOn && overviewError && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{apiErrorMessage(overviewError)}</span>
+          </div>
+          <button
+            onClick={() => void refetchOverview()}
+            className="text-xs font-semibold text-destructive hover:underline shrink-0"
+          >
+            إعادة المحاولة
+          </button>
         </div>
       )}
 
