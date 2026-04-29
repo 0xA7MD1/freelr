@@ -35,7 +35,7 @@ export function TopBar({ onLogout }: TopBarProps) {
         <span className="text-sm hidden md:block">{today}</span>
         <div className="md:hidden flex items-center gap-2 font-semibold">
           <Logo className="w-6 h-6" />
-          <span className="text-[#0052FC] text-lg font-bold font-[family-name:var(--font-inter)]">Freelr</span>
+          <span className="text-[#0052FC] text-lg font-bold font-sans">Freelr</span>
         </div>
       </div>
 

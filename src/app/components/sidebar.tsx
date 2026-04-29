@@ -18,7 +18,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
       <div className="flex h-20 items-center px-6 mb-2">
         <Link href="/home" className="flex items-center gap-3 font-semibold text-[#0052FC]">
           <Logo className="w-8 h-8" />
-          <span className="text-xl font-bold tracking-tight font-[family-name:var(--font-inter)]">Freelr</span>
+          <span className="text-xl font-bold tracking-tight font-sans">Freelr</span>
         </Link>
       </div>
       <div className="flex-1 overflow-auto">

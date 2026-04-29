@@ -42,7 +42,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
             <Logo className="w-14 h-14" />
           </div>
           <div className="flex items-center gap-3 font-semibold text-[#0052FC]">
-            <span className="text-3xl font-bold tracking-tight font-[family-name:var(--font-inter)]">Freelr</span>
+            <span className="text-3xl font-bold tracking-tight font-sans">Freelr</span>
           </div>
         </div>
 

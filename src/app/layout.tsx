@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Cairo, Inter } from "next/font/google";
+import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/shared/ui/sonner";
 import { AuthProvider } from "@/lib/auth/auth-context";
 
-const cairo = Cairo({ subsets: ["arabic"], variable: "--font-sans" });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const ibmPlexSansArabic = IBM_Plex_Sans_Arabic({
+  subsets: ["arabic", "latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700"],
+  variable: "--font-sans",
+});
 
 export const metadata: Metadata = {
   title: "Freelr",
@@ -15,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={cn("font-sans", cairo.variable, inter.variable)}>
+    <html lang="ar" dir="rtl" className={cn("font-sans", ibmPlexSansArabic.variable)}>
       <body suppressHydrationWarning className="bg-muted/30">
         <AuthProvider>{children}</AuthProvider>
         <Toaster position="top-center" dir="rtl" />

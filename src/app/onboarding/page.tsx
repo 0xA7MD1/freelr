@@ -110,7 +110,7 @@ export default function OnboardingPage() {
           <div className="flex justify-center mb-2">
             <Logo className="w-14 h-14" />
           </div>
-          <span className="text-3xl font-bold tracking-tight font-[family-name:var(--font-inter)] text-[#0052FC]">
+          <span className="text-3xl font-bold tracking-tight font-sans text-[#0052FC]">
             Freelr
           </span>
         </div>
