@@ -1,4 +1,4 @@
-import { Bot, CreditCard, DollarSign, LayoutDashboard, Receipt, Users, Bell, TrendingUp } from "lucide-react";
+import { Bot, CreditCard, DollarSign, LayoutDashboard, Receipt, Users, Bell, TrendingUp, Inbox } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type TabId =
@@ -29,4 +29,5 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "forecasts", name: "التوقعات", icon: TrendingUp, href: "/forecasts" },
   { id: "ai", name: "المساعد الذكي", icon: Bot, href: "/ai" },
   { id: "alerts", name: "التنبيهات", icon: Bell, href: "/alerts" },
+  { id: "notifications", name: "الإشعارات", icon: Inbox, href: "/notifications" },
 ];

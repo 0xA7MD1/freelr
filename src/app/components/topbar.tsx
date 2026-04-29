@@ -53,12 +53,12 @@ export function TopBar({ onLogout }: TopBarProps) {
           <span className="text-sm font-medium">{fullName}</span>
         </Link>
 
-        <Link href="/notifications">
+        <Link href="/alerts">
           <Button
             variant="ghost"
             size="icon"
-            className={`relative group text-muted-foreground hover:text-foreground ${pathname === "/notifications" ? "bg-secondary text-foreground" : ""}`}
-            aria-label="الإشعارات"
+            className={`relative group text-muted-foreground hover:text-foreground ${pathname === "/alerts" ? "bg-secondary text-foreground" : ""}`}
+            aria-label="التنبيهات"
           >
             <Bell className="h-5 w-5" />
             <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-destructive border-2 border-card" />
