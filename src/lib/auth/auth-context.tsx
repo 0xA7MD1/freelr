@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { authApi } from "@/lib/api/auth";
+import { businessApi } from "@/lib/api/business";
 import { ApiError, isApiConfigured } from "@/lib/api/client";
 import type {
   ForgotPasswordPayload,
@@ -17,6 +18,12 @@ import type {
   User,
 } from "@/lib/api/types";
 import { authStorage } from "./storage";
+
+interface CreateBusinessInput {
+  name: string;
+  industry: string;
+  currency: string;
+}
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -32,10 +39,17 @@ interface AuthContextValue {
   user: User | null;
   session: AuthSession | null;
   permissions: string[];
+  /** ID of the business owned by the current user. Null until loaded. */
+  businessId: string | null;
+  /** Currency code of the business (e.g. "USD", "AED"). Null until loaded. */
+  currency: string | null;
+  /** Update the currency in context + storage (call after business update). */
+  setCurrency: (code: string) => void;
   login: (payload: LoginPayload & { remember?: boolean }) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   forgotPassword: (payload: ForgotPasswordPayload) => Promise<void>;
   logout: () => Promise<void>;
+  createBusiness: (input: CreateBusinessInput) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,6 +64,9 @@ const FALLBACK_USER: User = {
   plan: "trial",
 };
 
+const FALLBACK_BUSINESS_ID = "00000000-0000-0000-0000-000000000000";
+const FALLBACK_CURRENCY = "AED";
+
 function readSession(): AuthSession | null {
   const token = authStorage.getToken();
   if (!token) return null;
@@ -61,30 +78,71 @@ function readSession(): AuthSession | null {
   };
 }
 
+/** Fetch profile then business, returning both. Falls back gracefully on errors. */
+async function loadProfileAndBusiness(): Promise<{ user: User; businessId: string | null; currency: string | null }> {
+  const user = await authApi.profile();
+  if (user.id) authStorage.setUserId(user.id);
+
+  let businessId: string | null = authStorage.getBusinessId();
+  let currency: string | null = authStorage.getCurrency();
+
+  if (!businessId && user.id) {
+    try {
+      const business = await businessApi.getByOwner(user.id);
+      businessId = business.id;
+      currency = business.currency;
+      authStorage.setBusinessId(business.id);
+      authStorage.setCurrency(business.currency);
+    } catch {
+      // business not yet created — caller will handle
+    }
+  } else if (businessId && !currency && user.id) {
+    // businessId is cached but currency is not — fetch to hydrate it
+    try {
+      const business = await businessApi.getByOwner(user.id);
+      currency = business.currency;
+      authStorage.setCurrency(business.currency);
+    } catch {
+      // ignore — UI will fall back to a default
+    }
+  }
+  return { user, businessId, currency };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [businessId, setBusinessId] = useState<string | null>(
+    () => authStorage.getBusinessId(),
+  );
+  const [currency, setCurrencyState] = useState<string | null>(
+    () => authStorage.getCurrency(),
+  );
 
   useEffect(() => {
     const existing = readSession();
     if (!existing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("unauthenticated");
       return;
     }
     setSession(existing);
+
     if (!isApiConfigured()) {
       setUser(FALLBACK_USER);
+      setBusinessId(FALLBACK_BUSINESS_ID);
+      setCurrencyState(FALLBACK_CURRENCY);
       setStatus("authenticated");
       return;
     }
+
     let cancelled = false;
-    authApi
-      .me()
-      .then((u) => {
+    loadProfileAndBusiness()
+      .then(({ user: u, businessId: bid, currency: cur }) => {
         if (cancelled) return;
         setUser(u);
+        setBusinessId(bid);
+        setCurrencyState(cur);
         setStatus("authenticated");
       })
       .catch((err) => {
@@ -94,13 +152,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(null);
           setStatus("unauthenticated");
         } else {
+          // Network error / API down — use cached data; null businessId → onboarding
           setUser(FALLBACK_USER);
+          setBusinessId(authStorage.getBusinessId());
+          setCurrencyState(authStorage.getCurrency());
           setStatus("authenticated");
         }
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const login = useCallback<AuthContextValue["login"]>(async ({ remember, ...payload }) => {
@@ -111,18 +170,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         permissions: [],
       };
-      authStorage.setSession({
-        token: demo.token,
-        refreshToken: demo.refreshToken!,
-        expiresAt: demo.expiresAt!,
-        permissions: demo.permissions,
-        remember: !!remember,
-      });
+      authStorage.setSession({ ...demo, token: demo.token, refreshToken: demo.refreshToken!, expiresAt: demo.expiresAt!, remember: !!remember });
       setSession(demo);
       setUser(FALLBACK_USER);
+      setBusinessId(FALLBACK_BUSINESS_ID);
+      setCurrencyState(FALLBACK_CURRENCY);
       setStatus("authenticated");
       return;
     }
+
     const res = await authApi.login(payload);
     authStorage.setSession({
       token: res.token,
@@ -137,29 +193,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       expiresAt: res.expiresAt,
       permissions: res.permissions ?? [],
     });
-    setUser({
-      id: "",
-      firstName: "",
-      lastName: "",
-      email: payload.email,
-    });
+
+    // Fetch real profile + business after token is stored
+    try {
+      const { user: u, businessId: bid, currency: cur } = await loadProfileAndBusiness();
+      setUser(u);
+      setBusinessId(bid);
+      setCurrencyState(cur);
+    } catch {
+      // Profile fetch failed — keep a minimal user so dashboard still renders
+      setUser({ id: "", firstName: "", lastName: "", email: payload.email });
+      setBusinessId(null);
+      setCurrencyState(null);
+    }
     setStatus("authenticated");
   }, []);
 
   const register = useCallback<AuthContextValue["register"]>(async (payload) => {
     if (!isApiConfigured()) {
+      // Demo mode: auto-login after register
       const demo: AuthSession = {
         token: "demo-token",
         refreshToken: "demo-refresh",
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         permissions: [],
       };
-      authStorage.setSession({
-        token: demo.token,
-        refreshToken: demo.refreshToken!,
-        expiresAt: demo.expiresAt!,
-        permissions: demo.permissions,
-      });
+      authStorage.setSession({ ...demo, token: demo.token, refreshToken: demo.refreshToken!, expiresAt: demo.expiresAt! });
       setSession(demo);
       setUser({
         ...FALLBACK_USER,
@@ -168,9 +227,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: payload.email,
         phone: payload.phoneNumber,
       });
+      setBusinessId(FALLBACK_BUSINESS_ID);
+      setCurrencyState(FALLBACK_CURRENCY);
       setStatus("authenticated");
       return;
     }
+    // Real API: register only — the caller must redirect to login
     await authApi.register(payload);
   }, []);
 
@@ -180,18 +242,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback<AuthContextValue["logout"]>(async () => {
-    if (isApiConfigured()) {
+    const refreshToken = authStorage.getRefreshToken();
+    if (isApiConfigured() && refreshToken) {
       try {
-        await authApi.logout();
+        await authApi.logout(refreshToken);
       } catch {
-        // ignore
+        // ignore — clear locally regardless
       }
     }
     authStorage.clear();
     setSession(null);
     setUser(null);
+    setBusinessId(null);
+    setCurrencyState(null);
     setStatus("unauthenticated");
   }, []);
+
+  const setCurrency = useCallback((code: string) => {
+    authStorage.setCurrency(code);
+    setCurrencyState(code);
+  }, []);
+
+  const createBusiness = useCallback<AuthContextValue["createBusiness"]>(
+    async ({ name, industry, currency: cur }) => {
+      if (!isApiConfigured()) return;
+      const userId = user?.id ?? authStorage.getUserId();
+      if (!userId) throw new Error("Not authenticated");
+      const res = await businessApi.create({ name, industry, currency: cur, ownerId: userId });
+      authStorage.setBusinessId(res.id);
+      authStorage.setCurrency(cur);
+      setBusinessId(res.id);
+      setCurrencyState(cur);
+    },
+    [user?.id],
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -199,12 +283,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       session,
       permissions: session?.permissions ?? [],
+      businessId,
+      currency,
+      setCurrency,
       login,
       register,
       forgotPassword,
       logout,
+      createBusiness,
     }),
-    [status, user, session, login, register, forgotPassword, logout],
+    [status, user, session, businessId, currency, setCurrency, login, register, forgotPassword, logout, createBusiness],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

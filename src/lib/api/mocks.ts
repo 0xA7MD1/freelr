@@ -2,8 +2,11 @@ import {
   InvoiceStatus,
   type AIInsight,
   type ChartPoint,
+  type Client,
   type DashboardOverview,
   type Expense,
+  type IncomeCategory,
+  type IncomeEntry,
   type LiquidityAlert,
   type NotificationItem,
   type RecentInvoice,
@@ -15,6 +18,8 @@ export const MOCK_DASHBOARD: DashboardOverview = {
   netCashflow: 4000,
   unpaidInvoicesTotal: 6500,
   unreadAlertsCount: 2,
+  incomeChangePercent: 12,
+  expenseChangePercent: 5,
 };
 
 export const MOCK_CURRENCY = "AED";
@@ -75,9 +80,116 @@ export const MOCK_LIQUIDITY_ALERT: LiquidityAlert = {
 };
 
 export const MOCK_EXPENSES: Expense[] = [
-  { id: "1", amount: 1500, category: "تسويق", description: "إعلانات جوجل", date: new Date(2026, 3, 20).toISOString() },
-  { id: "2", amount: 450, category: "برمجيات", description: "اشتراك Github & Vercel", date: new Date(2026, 3, 18).toISOString() },
-  { id: "3", amount: 120, category: "ضيافة", description: "قهوة اجتماع عميل", date: new Date(2026, 3, 15).toISOString() },
+  {
+    id: "1",
+    amount: 1500,
+    category: "تسويق",
+    description: "إعلانات جوجل",
+    expenseDate: new Date(2026, 3, 20).toISOString(),
+    date: new Date(2026, 3, 20).toISOString(),
+  },
+  {
+    id: "2",
+    amount: 450,
+    category: "برمجيات",
+    description: "اشتراك Github & Vercel",
+    expenseDate: new Date(2026, 3, 18).toISOString(),
+    date: new Date(2026, 3, 18).toISOString(),
+  },
+  {
+    id: "3",
+    amount: 120,
+    category: "ضيافة",
+    description: "قهوة اجتماع عميل",
+    expenseDate: new Date(2026, 3, 15).toISOString(),
+    date: new Date(2026, 3, 15).toISOString(),
+  },
+];
+
+export const MOCK_INCOME: IncomeEntry[] = [
+  {
+    id: "income-1",
+    amount: 3200,
+    description: "ورشة تدريب",
+    source: "ورشة تدريب",
+    category: "تدريب",
+    categoryId: "mock-income-category-training",
+    transactionDate: new Date(2026, 3, 24).toISOString(),
+    incomeDate: new Date(2026, 3, 24).toISOString(),
+    notes: "جلسة تدريبية مستقلة خارج الفواتير",
+  },
+  {
+    id: "income-2",
+    amount: 850,
+    description: "عمولة إحالة",
+    source: "عمولة إحالة",
+    category: "عمولات",
+    categoryId: "mock-income-category-commission",
+    transactionDate: new Date(2026, 3, 19).toISOString(),
+    incomeDate: new Date(2026, 3, 19).toISOString(),
+  },
+  {
+    id: "income-3",
+    amount: 1250,
+    description: "بيع قالب رقمي",
+    source: "بيع قالب رقمي",
+    category: "منتجات رقمية",
+    categoryId: "mock-income-category-products",
+    transactionDate: new Date(2026, 3, 12).toISOString(),
+    incomeDate: new Date(2026, 3, 12).toISOString(),
+    notes: "دخل من منتج جاهز",
+  },
+];
+
+export const MOCK_INCOME_CATEGORIES: IncomeCategory[] = [
+  {
+    id: "mock-income-category-training",
+    name: "تدريب",
+    description: "دخل من ورش وجلسات تدريبية",
+  },
+  {
+    id: "mock-income-category-commission",
+    name: "عمولات",
+    description: "دخل من الإحالات والعمولات",
+  },
+  {
+    id: "mock-income-category-products",
+    name: "منتجات رقمية",
+    description: "دخل من بيع منتجات أو قوالب رقمية",
+  },
+];
+
+export const MOCK_CLIENTS: Client[] = [
+  {
+    id: "client-1",
+    fullName: "سارة العمري",
+    firstName: "سارة",
+    lastName: "العمري",
+    email: "sara@example.com",
+    phone: "+966 55 123 4567",
+    company: "شركة الإبداع الرقمي",
+    address: "الرياض، المملكة العربية السعودية",
+  },
+  {
+    id: "client-2",
+    fullName: "خالد الحربي",
+    firstName: "خالد",
+    lastName: "الحربي",
+    email: "khalid@example.com",
+    phone: "+971 50 333 4444",
+    company: "مؤسسة الرؤية",
+    address: "دبي، الإمارات العربية المتحدة",
+  },
+  {
+    id: "client-3",
+    fullName: "ليلى يوسف",
+    firstName: "ليلى",
+    lastName: "يوسف",
+    email: "layla@example.com",
+    phone: "+962 79 555 6666",
+    company: "وكالة النجوم للتسويق",
+    address: "عمّان، الأردن",
+  },
 ];
 
 export const MOCK_NOTIFICATIONS: NotificationItem[] = [

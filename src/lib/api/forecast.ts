@@ -2,6 +2,9 @@ import { api } from "./client";
 import type { ForecastResponse } from "./types";
 
 export const forecastApi = {
-  // REVIEW: check if this matches the backend before connecting
-  generate: () => api.post<ForecastResponse>("/api/v1/forecast/generate"),
+  getLatest: (businessId: string) =>
+    api.get<ForecastResponse | null>("/api/v1/forecast", { query: { businessId } }),
+
+  generate: (businessId: string, forecastMonths = 3) =>
+    api.post<ForecastResponse>("/api/v1/forecast/generate", { businessId, forecastMonths }),
 };

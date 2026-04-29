@@ -1,26 +1,37 @@
 "use client";
 
+import { useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Loader2, Wallet } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFetch } from "@/lib/hooks/use-fetch";
 import { dashboardApi } from "@/lib/api/dashboard";
+import { invoicesApi } from "@/lib/api/invoices";
+import { forecastApi } from "@/lib/api/forecast";
 import { isApiConfigured } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth/auth-context";
 import {
   MOCK_CHART,
   MOCK_CURRENCY,
   MOCK_DASHBOARD,
   MOCK_EXPENSES_CHANGE_PCT,
   MOCK_INCOME_CHANGE_PCT,
-  MOCK_INSIGHTS,
-  MOCK_LIQUIDITY_ALERT,
   MOCK_PROFIT_MARGIN_PCT,
   MOCK_RECENT_INVOICES,
 } from "@/lib/api/mocks";
-import { InvoiceStatus, type DashboardOverview } from "@/lib/api/types";
+import {
+  InvoiceStatus,
+  type AIInsight,
+  type Alert,
+  type DashboardChartsData,
+  type DashboardOverview,
+  type ForecastResponse,
+  type Invoice,
+  type LiquidityAlert,
+} from "@/lib/api/types";
 
-const INVOICE_STATUS_LABEL: Record<InvoiceStatus, { label: string; className: string }> = {
+const INVOICE_STATUS_LABEL: Record<number, { label: string; className: string }> = {
   [InvoiceStatus.Draft]: { label: "مسودة", className: "bg-slate-100 text-slate-700" },
   [InvoiceStatus.Sent]: { label: "مُرسلة", className: "bg-blue-100 text-blue-700" },
   [InvoiceStatus.Paid]: { label: "مدفوعة", className: "bg-emerald-100 text-emerald-700" },
@@ -29,28 +40,145 @@ const INVOICE_STATUS_LABEL: Record<InvoiceStatus, { label: string; className: st
   [InvoiceStatus.Cancelled]: { label: "ملغاة", className: "bg-gray-100 text-gray-500" },
 };
 
-const DEMO_BUSINESS_ID = "00000000-0000-0000-0000-000000000000";
+function getStatusLabel(status: InvoiceStatus | string | number) {
+  const key = typeof status === "string" ? InvoiceStatus[status as keyof typeof InvoiceStatus] ?? 0 : Number(status);
+  return INVOICE_STATUS_LABEL[key] ?? { label: String(status), className: "bg-gray-100 text-gray-500" };
+}
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US");
 }
 
+function formatDate(dateStr: string) {
+  try {
+    return new Date(dateStr).toLocaleDateString("ar-AE");
+  } catch {
+    return dateStr;
+  }
+}
+
 export function OverviewTab() {
-  const { data, isLoading, error } = useFetch<DashboardOverview>(
-    () => dashboardApi.overview(DEMO_BUSINESS_ID),
-    {
-      fallback: MOCK_DASHBOARD,
-      enabled: isApiConfigured(),
-    },
+  const { businessId, currency } = useAuth();
+  const apiOn = isApiConfigured() && !!businessId;
+
+  const { data: overviewData, isLoading, error } = useFetch<DashboardOverview>(
+    () => dashboardApi.overview(businessId!),
+    { fallback: MOCK_DASHBOARD, enabled: apiOn, cacheKey: businessId ?? "mock" },
   );
 
-  const overview = data ?? MOCK_DASHBOARD;
-  const usingMock = !isApiConfigured() || (!!error && !data);
+  const { data: chartsData } = useFetch<DashboardChartsData>(
+    () => dashboardApi.charts(businessId!, 6),
+    { enabled: apiOn, cacheKey: businessId ?? "mock" },
+  );
 
-  const chartData = MOCK_CHART.map((p) => ({ name: p.name, دخل: p.income, مصروفات: p.expenses }));
-  const insights = MOCK_INSIGHTS;
-  const recentInvoices = MOCK_RECENT_INVOICES;
-  const liquidityAlert = MOCK_LIQUIDITY_ALERT;
+  const { data: invoicesData } = useFetch<Invoice[]>(
+    () => invoicesApi.list(businessId!),
+    { enabled: apiOn, cacheKey: businessId ?? "mock" },
+  );
+
+  const { data: forecastData, isLoading: forecastLoading, setData: setForecastData } = useFetch<ForecastResponse | null>(
+    () => forecastApi.getLatest(businessId!),
+    { enabled: apiOn, cacheKey: `forecast-${businessId}` },
+  );
+
+  const { data: dashboardAlerts } = useFetch<Alert[]>(
+    () => dashboardApi.alerts(businessId!, false),
+    { enabled: apiOn, cacheKey: `dash-alerts-${businessId}` },
+  );
+
+  const generatingForecast = useRef(false);
+  useEffect(() => {
+    // Wait until GET /forecast finishes, then regenerate to get fresh Arabic recommendations
+    if (!apiOn || forecastLoading || generatingForecast.current) return;
+    generatingForecast.current = true;
+    forecastApi.generate(businessId!).then(setForecastData).catch(() => {}).finally(() => {
+      generatingForecast.current = false;
+    });
+  }, [apiOn, businessId, forecastLoading, setForecastData]);
+
+  const overview = overviewData ?? MOCK_DASHBOARD;
+  const usingMock = !apiOn || (!!error && !overviewData);
+
+  const incomeChangePct = overview.incomeChangePercent ?? MOCK_INCOME_CHANGE_PCT;
+  const expenseChangePct = overview.expenseChangePercent ?? MOCK_EXPENSES_CHANGE_PCT;
+  const profitMarginPct = overview.netCashflow > 0 && overview.totalIncome > 0
+    ? Math.round((overview.netCashflow / overview.totalIncome) * 100)
+    : MOCK_PROFIT_MARGIN_PCT;
+
+  const chartData = useMemo(() => {
+    if (chartsData?.incomeByMonth?.length) {
+      return chartsData.incomeByMonth.map((pt, i) => ({
+        name: pt.month,
+        دخل: pt.total,
+        مصروفات: chartsData.expensesByMonth[i]?.total ?? 0,
+      }));
+    }
+    return MOCK_CHART.map((p) => ({ name: p.name, دخل: p.income, مصروفات: p.expenses }));
+  }, [chartsData]);
+
+  const recentInvoices = useMemo(() => {
+    if (invoicesData?.length) {
+      return invoicesData.slice(0, 5).map((inv) => ({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        client: inv.clientName,
+        date: formatDate(inv.issueDate ?? inv.dueDate),
+        amount: inv.total,
+        currency: currency ?? MOCK_CURRENCY,
+        status: inv.status,
+      }));
+    }
+    return MOCK_RECENT_INVOICES;
+  }, [invoicesData]);
+
+  const insights: AIInsight[] = useMemo(() => {
+    if (!forecastData?.recommendations?.length) return [];
+    return forecastData.recommendations.slice(0, 3).map((rec, i) => ({
+      id: `forecast-${i}`,
+      kind: (["saving", "collection", "info"] as const)[i] ?? "info",
+      title: (["توصية مالية", "تحصيل الأموال", "معلومة"] as const)[i] ?? "معلومة",
+      body: rec,
+    } satisfies AIInsight));
+  }, [forecastData]);
+
+  const liquidityAlert: LiquidityAlert | null = useMemo(() => {
+    // Use real dashboard alerts as the primary source
+    const WARNING_TYPES = ["CashflowWarning", "LowBalance", "HighExpense", "OverdueInvoice"];
+    const SEVERITY_ORDER = ["Critical", "Error", "Warning", "Info"];
+
+    const relevantAlert = dashboardAlerts
+      ?.filter((a) => !a.isRead && WARNING_TYPES.includes(a.alertType))
+      ?.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
+      ?.at(0);
+
+    if (relevantAlert) {
+      const isHigh = relevantAlert.severity === "Critical" || relevantAlert.severity === "Error";
+      return {
+        severity: isHigh ? "danger" : "warning",
+        expectedShortfall: forecastData?.expectedShortage ?? 0,
+        currency: currency ?? MOCK_CURRENCY,
+        message: relevantAlert.message,
+      };
+    }
+
+    // Fallback: derive from forecast if no alert but risk is high
+    if (forecastData) {
+      const shortage = forecastData.expectedShortage ?? 0;
+      const riskLevel = String(forecastData.riskLevel ?? "Low");
+      if (shortage > 0 || riskLevel === "High" || riskLevel === "Critical") {
+        return {
+          severity: riskLevel === "Critical" ? "danger" : "warning",
+          expectedShortfall: shortage,
+          currency: currency ?? MOCK_CURRENCY,
+          message: shortage > 0
+            ? `توقعات الذكاء الاصطناعي تشير إلى احتمال عجز بمقدار {amount} الشهر القادم. يُنصح بمتابعة الفواتير غير المحصّلة.`
+            : `مستوى المخاطر مرتفع — راجع تقرير التحليل المالي لمزيد من التفاصيل.`,
+        };
+      }
+    }
+
+    return null;
+  }, [dashboardAlerts, forecastData, currency]);
 
   if (isLoading && !overview) {
     return (
@@ -101,28 +229,28 @@ export function OverviewTab() {
         <KpiCard
           title="إجمالي الدخل"
           value={overview.totalIncome}
-          currency={MOCK_CURRENCY}
+          currency={currency ?? MOCK_CURRENCY}
           tone="positive"
           icon={<ArrowUpRight className="w-4 h-4" />}
-          changePct={MOCK_INCOME_CHANGE_PCT}
+          changePct={incomeChangePct}
           changeLabel="من الشهر الماضي"
         />
         <KpiCard
           title="المصروفات"
           value={overview.totalExpenses}
-          currency={MOCK_CURRENCY}
+          currency={currency ?? MOCK_CURRENCY}
           tone="negative"
           icon={<ArrowDownRight className="w-4 h-4" />}
-          changePct={MOCK_EXPENSES_CHANGE_PCT}
+          changePct={expenseChangePct}
           changeLabel="زيادة غير متوقعة"
         />
         <KpiCard
           title="صافي الربح"
           value={overview.netCashflow}
-          currency={MOCK_CURRENCY}
+          currency={currency ?? MOCK_CURRENCY}
           tone="info"
           icon={<Wallet className="w-4 h-4" />}
-          margin={MOCK_PROFIT_MARGIN_PCT}
+          margin={profitMarginPct}
           extraClass="sm:col-span-2 lg:col-span-1"
         />
       </div>
@@ -160,22 +288,39 @@ export function OverviewTab() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4 flex-1">
-              <ul className="space-y-3">
-                {insights.map((insight) => (
-                  <li
-                    key={insight.id}
-                    className="flex gap-3 text-sm text-foreground bg-secondary/30 p-3.5 rounded-xl border border-border/50 hover:bg-secondary/50 transition-colors"
-                  >
-                    <div className={insight.kind === "saving" ? "text-emerald-500 mt-0.5" : "text-amber-500 mt-0.5"}>
-                      {insight.kind === "saving" ? "💡" : insight.kind === "collection" ? "🕒" : "ℹ️"}
-                    </div>
-                    <div>
-                      <span className="font-semibold block mb-0.5 text-xs text-muted-foreground">{insight.title}</span>
-                      {insight.body}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              {forecastLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-14 rounded-xl bg-secondary/40 animate-pulse" />
+                  ))}
+                </div>
+              ) : insights.length > 0 ? (
+                <ul className="space-y-3">
+                  {insights.map((insight) => (
+                    <li
+                      key={insight.id}
+                      className="flex gap-3 text-sm text-foreground bg-secondary/30 p-3.5 rounded-xl border border-border/50 hover:bg-secondary/50 transition-colors"
+                    >
+                      <div className={insight.kind === "saving" ? "text-emerald-500 mt-0.5" : "text-amber-500 mt-0.5"}>
+                        {insight.kind === "saving" ? "💡" : insight.kind === "collection" ? "🕒" : "ℹ️"}
+                      </div>
+                      <div>
+                        <span className="font-semibold block mb-0.5 text-xs text-muted-foreground">{insight.title}</span>
+                        {insight.body}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full py-6 text-center text-muted-foreground gap-2">
+                  <span className="text-2xl">🤖</span>
+                  <p className="text-xs leading-relaxed max-w-[160px]">
+                    لا توجد توصيات بعد. اذهب إلى{" "}
+                    <a href="/ai" className="text-[#0052FC] hover:underline font-medium">المساعد الذكي</a>
+                    {" "}لتوليد تحليل مالي.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -203,14 +348,14 @@ export function OverviewTab() {
                 </tr>
               ) : (
                 recentInvoices.map((inv) => {
-                  const status = INVOICE_STATUS_LABEL[inv.status];
+                  const statusMeta = getStatusLabel(inv.status);
                   return (
                     <tr key={inv.id} className="hover:bg-secondary/30 transition-colors">
                       <td className="px-6 py-4 font-medium">{inv.client}</td>
                       <td className="px-6 py-4 text-muted-foreground">{inv.date}</td>
                       <td className="px-6 py-4">{formatAmount(inv.amount)} {inv.currency}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${status.className}`}>{status.label}</span>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusMeta.className}`}>{statusMeta.label}</span>
                       </td>
                     </tr>
                   );
@@ -264,7 +409,7 @@ function KpiCard({ title, value, currency, icon, tone, changePct, changeLabel, m
         </div>
         <div className={`mt-3 flex items-center gap-1.5 text-xs font-medium w-fit px-2 py-1 rounded-[6px] ${toneBadge}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-          {margin !== undefined ? `هامش الربح: ${margin}%` : `${changePct! > 0 ? "+" : ""}${changePct}% ${changeLabel ?? ""}`}
+          {margin !== undefined ? `هامش الربح: ${margin}%` : `${(changePct ?? 0) > 0 ? "+" : ""}${changePct}% ${changeLabel ?? ""}`}
         </div>
       </CardContent>
     </Card>

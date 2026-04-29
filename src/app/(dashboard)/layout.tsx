@@ -12,16 +12,18 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { status, logout } = useAuth();
+  const { status, logout, businessId } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
+    } else if (status === "authenticated" && businessId === null) {
+      router.push("/onboarding");
     }
-  }, [status, router]);
+  }, [status, businessId, router]);
 
-  if (status === "loading" || status === "unauthenticated") {
+  if (status === "loading" || status === "unauthenticated" || businessId === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
         <Loader2 className="w-6 h-6 animate-spin" />
