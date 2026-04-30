@@ -1,6 +1,6 @@
 # Freelr
 
-أدوات المال للمستقل وصاحب المشروع الصغير -  Financial tools for freelancers and small business owners.
+أدوات المال للمستقل وصاحب المشروع الصغير -   Financial tools for freelancers and small business owners.
 
 ## Problem & Solution
 Freelancers and small business owners often struggle with fragmented financial tracking, manual invoice management, and unpredictable cash flow. **Freelr** provides a centralized, Arabic-first platform to manage income, expenses, and clients while leveraging AI to provide actionable financial insights and cashflow forecasts.
