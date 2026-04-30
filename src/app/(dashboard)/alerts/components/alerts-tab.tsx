@@ -13,39 +13,14 @@ import { useFetch } from "@/lib/hooks/use-fetch";
 import { alertsApi } from "@/lib/api/alerts";
 import { ApiError, isApiConfigured } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useT } from "@/lib/i18n";
+import { ConfirmDeleteDialog } from "@/components/shared/ui/confirm-delete-dialog";
 import type { Alert } from "@/lib/api/types";
-
-// ─── helpers ────────────────────────────────────────────────────────────────
 
 type SeverityKey = "Info" | "Warning" | "Error" | "Critical";
 type AlertTypeKey =
   | "LowBalance" | "OverdueInvoice" | "HighExpense" | "CashflowWarning"
   | "PaymentReceived" | "InvoiceSent" | "General";
-
-const SEVERITY_CONFIG: Record<SeverityKey, { label: string; badgeClass: string; dotClass: string }> = {
-  Info:     { label: "معلومة", badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",       dotClass: "bg-blue-500" },
-  Warning:  { label: "تحذير",  badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",   dotClass: "bg-amber-500" },
-  Error:    { label: "خطأ",    badgeClass: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",           dotClass: "bg-red-500" },
-  Critical: { label: "حرج",    badgeClass: "bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-200 font-bold", dotClass: "bg-red-600 animate-pulse" },
-};
-
-const TYPE_CONFIG: Record<AlertTypeKey, { label: string; Icon: typeof Bell; iconBg: string; iconColor: string }> = {
-  LowBalance:       { label: "رصيد منخفض",        Icon: CreditCard,    iconBg: "bg-red-500/10",    iconColor: "text-red-500" },
-  OverdueInvoice:   { label: "فاتورة متأخرة",      Icon: FileWarning,   iconBg: "bg-amber-500/10",  iconColor: "text-amber-500" },
-  HighExpense:      { label: "مصروفات مرتفعة",     Icon: TrendingDown,  iconBg: "bg-orange-500/10", iconColor: "text-orange-500" },
-  CashflowWarning:  { label: "تحذير تدفق نقدي",   Icon: ShieldAlert,   iconBg: "bg-red-500/10",    iconColor: "text-red-500" },
-  PaymentReceived:  { label: "دفعة واردة",          Icon: CheckCircle,   iconBg: "bg-emerald-500/10",iconColor: "text-emerald-500" },
-  InvoiceSent:      { label: "فاتورة مُرسلة",      Icon: Bell,          iconBg: "bg-blue-500/10",   iconColor: "text-blue-500" },
-  General:          { label: "عام",                Icon: Info,          iconBg: "bg-[#0052FC]/10",  iconColor: "text-[#0052FC]" },
-};
-
-function getSeverityConfig(severity: string) {
-  return SEVERITY_CONFIG[severity as SeverityKey] ?? SEVERITY_CONFIG.Info;
-}
-
-function getTypeConfig(alertType: string) {
-  return TYPE_CONFIG[alertType as AlertTypeKey] ?? TYPE_CONFIG.General;
-}
 
 function formatDate(dateStr: string) {
   try {
@@ -55,12 +30,13 @@ function formatDate(dateStr: string) {
   }
 }
 
-// ─── component ──────────────────────────────────────────────────────────────
-
 export function AlertsTab() {
   const { businessId, user } = useAuth();
+  const t = useT();
   const apiOn = isApiConfigured() && !!businessId;
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [dismissTarget, setDismissTarget] = useState<Alert | null>(null);
+  const [dismissBusy, setDismissBusy] = useState(false);
 
   const { data, setData, isLoading, refetch } = useFetch<Alert[]>(
     () => alertsApi.list(businessId!, unreadOnly),
@@ -70,13 +46,40 @@ export function AlertsTab() {
   const alerts = data ?? [];
   const unreadCount = alerts.filter((a) => !a.isRead).length;
 
+  const SEVERITY_CONFIG: Record<SeverityKey, { labelKey: string; badgeClass: string; dotClass: string }> = {
+    Info:     { labelKey: "alerts.severity.info",     badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",       dotClass: "bg-blue-500" },
+    Warning:  { labelKey: "alerts.severity.warning",  badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",   dotClass: "bg-amber-500" },
+    Error:    { labelKey: "alerts.severity.error",    badgeClass: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",           dotClass: "bg-red-500" },
+    Critical: { labelKey: "alerts.severity.critical", badgeClass: "bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-200 font-bold", dotClass: "bg-red-600 animate-pulse" },
+  };
+
+  const TYPE_CONFIG: Record<AlertTypeKey, { labelKey: string; Icon: typeof Bell; iconBg: string; iconColor: string }> = {
+    LowBalance:       { labelKey: "alerts.types.lowBalance",       Icon: CreditCard,    iconBg: "bg-red-500/10",    iconColor: "text-red-500" },
+    OverdueInvoice:   { labelKey: "alerts.types.overdueInvoice",   Icon: FileWarning,   iconBg: "bg-amber-500/10",  iconColor: "text-amber-500" },
+    HighExpense:      { labelKey: "alerts.types.highExpense",       Icon: TrendingDown,  iconBg: "bg-orange-500/10", iconColor: "text-orange-500" },
+    CashflowWarning:  { labelKey: "alerts.types.cashflowWarning",  Icon: ShieldAlert,   iconBg: "bg-red-500/10",    iconColor: "text-red-500" },
+    PaymentReceived:  { labelKey: "alerts.types.paymentReceived",  Icon: CheckCircle,   iconBg: "bg-emerald-500/10",iconColor: "text-emerald-500" },
+    InvoiceSent:      { labelKey: "alerts.types.invoiceSent",      Icon: Bell,          iconBg: "bg-blue-500/10",   iconColor: "text-blue-500" },
+    General:          { labelKey: "alerts.types.general",          Icon: Info,          iconBg: "bg-[#0052FC]/10",  iconColor: "text-[#0052FC]" },
+  };
+
+  function getSeverityConfig(severity: string) {
+    const cfg = SEVERITY_CONFIG[severity as SeverityKey] ?? SEVERITY_CONFIG.Info;
+    return { ...cfg, label: t(cfg.labelKey) };
+  }
+
+  function getTypeConfig(alertType: string) {
+    const cfg = TYPE_CONFIG[alertType as AlertTypeKey] ?? TYPE_CONFIG.General;
+    return { ...cfg, label: t(cfg.labelKey) };
+  }
+
   const handleMarkRead = async (alert: Alert) => {
     if (alert.isRead) return;
     if (apiOn) {
       try {
         await alertsApi.markRead(alert.id, businessId!);
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "تعذّر تحديث التنبيه.");
+        toast.error(err instanceof ApiError ? err.message : t("alerts.markReadError"));
         return;
       }
     }
@@ -85,17 +88,22 @@ export function AlertsTab() {
     );
   };
 
-  const handleDismiss = async (alert: Alert) => {
+  const handleDismissConfirm = async () => {
+    if (!dismissTarget) return;
+    setDismissBusy(true);
     if (apiOn) {
       try {
-        await alertsApi.dismiss(alert.id, businessId!, user?.id ?? "");
+        await alertsApi.dismiss(dismissTarget.id, businessId!, user?.id ?? "");
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "تعذّر حذف التنبيه.");
+        toast.error(err instanceof ApiError ? err.message : t("alerts.dismissError"));
+        setDismissBusy(false);
         return;
       }
     }
-    setData((prev) => (prev ?? alerts).filter((a) => a.id !== alert.id));
-    toast.success("تم حذف التنبيه.");
+    setData((prev) => (prev ?? alerts).filter((a) => a.id !== dismissTarget.id));
+    toast.success(t("alerts.dismissSuccess"));
+    setDismissTarget(null);
+    setDismissBusy(false);
   };
 
   const handleMarkAllRead = async () => {
@@ -105,29 +113,34 @@ export function AlertsTab() {
       try {
         await Promise.all(unread.map((a) => alertsApi.markRead(a.id, businessId!)));
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "تعذّر تحديث التنبيهات.");
+        toast.error(err instanceof ApiError ? err.message : t("alerts.markAllError"));
         return;
       }
     }
     setData((prev) => (prev ?? alerts).map((a) => ({ ...a, isRead: true, readAt: new Date().toISOString() })));
-    toast.success("تم تحديد الكل كمقروء.");
+    toast.success(t("alerts.markAllSuccess"));
   };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <ConfirmDeleteDialog
+        open={!!dismissTarget}
+        onClose={() => setDismissTarget(null)}
+        onConfirm={handleDismissConfirm}
+        loading={dismissBusy}
+      />
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-1.5">
-            <h2 className="text-2xl font-bold tracking-tight">التنبيهات</h2>
+            <h2 className="text-2xl font-bold tracking-tight">{t("alerts.title")}</h2>
             {unreadCount > 0 && (
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold">
                 {unreadCount}
               </span>
             )}
           </div>
-          <p className="text-muted-foreground text-sm">تنبيهات تلقائية مبنية على أداء مشروعك المالي.</p>
+          <p className="text-muted-foreground text-sm">{t("alerts.description")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -137,12 +150,12 @@ export function AlertsTab() {
             className={unreadOnly ? "border-[#0052FC] text-[#0052FC]" : ""}
           >
             {unreadOnly ? <Bell className="w-3.5 h-3.5 ml-1.5" /> : <BellOff className="w-3.5 h-3.5 ml-1.5" />}
-            {unreadOnly ? "عرض الكل" : "غير المقروءة فقط"}
+            {unreadOnly ? t("common.showAll") : t("common.unreadOnly")}
           </Button>
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
               <Eye className="w-3.5 h-3.5 ml-1.5" />
-              تحديد الكل كمقروء
+              {t("common.markAllRead")}
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
@@ -151,27 +164,24 @@ export function AlertsTab() {
         </div>
       </div>
 
-      {/* Loading */}
       {isLoading && alerts.length === 0 && (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin" />
         </div>
       )}
 
-      {/* Empty state */}
       {!isLoading && alerts.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
           <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
             <Bell className="w-8 h-8 text-muted-foreground/40" />
           </div>
-          <h3 className="text-lg font-bold text-foreground mb-1">لا توجد تنبيهات</h3>
+          <h3 className="text-lg font-bold text-foreground mb-1">{t("alerts.noAlerts")}</h3>
           <p className="text-sm max-w-xs">
-            {unreadOnly ? "لا توجد تنبيهات غير مقروءة حالياً." : "سيتم إنشاء التنبيهات تلقائياً عند رصد أي نشاط مالي يستحق الانتباه."}
+            {unreadOnly ? t("alerts.noUnreadAlerts") : t("alerts.noAlertsDesc")}
           </p>
         </div>
       )}
 
-      {/* Alerts list */}
       {alerts.length > 0 && (
         <div className="space-y-3">
           {alerts.map((alert) => {
@@ -187,13 +197,9 @@ export function AlertsTab() {
                 }`}
               >
                 <CardContent className="p-4 flex gap-4">
-
-                  {/* Icon */}
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${typeMeta.iconBg}`}>
                     <Icon className={`w-5 h-5 ${typeMeta.iconColor}`} />
                   </div>
-
-                  {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-sm font-semibold text-foreground">{typeMeta.label}</span>
@@ -204,8 +210,6 @@ export function AlertsTab() {
                     <p className="text-sm text-muted-foreground leading-relaxed">{alert.message}</p>
                     <p className="text-xs text-muted-foreground/60 mt-1.5">{formatDate(alert.createdDate)}</p>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex flex-col items-center gap-2 shrink-0">
                     {!alert.isRead && (
                       <>
@@ -213,21 +217,20 @@ export function AlertsTab() {
                         <button
                           onClick={() => handleMarkRead(alert)}
                           className="text-muted-foreground hover:text-foreground transition-colors"
-                          title="تحديد كمقروء"
+                          title={t("common.markAsRead")}
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                       </>
                     )}
                     <button
-                      onClick={() => handleDismiss(alert)}
+                      onClick={() => setDismissTarget(alert)}
                       className="text-muted-foreground hover:text-red-500 transition-colors"
-                      title="حذف التنبيه"
+                      title={t("common.deleteItem")}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-
                 </CardContent>
               </Card>
             );

@@ -10,29 +10,31 @@ import { toast } from "sonner";
 import { aiApi } from "@/lib/api/ai";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useT } from "@/lib/i18n";
 import type { AIAnalysisResponse } from "@/lib/api/types";
-
-const RISK_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  Low:      { label: "منخفض",  color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", icon: <CheckCircle2 className="w-4 h-4" /> },
-  Medium:   { label: "متوسط",  color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",   icon: <AlertTriangle className="w-4 h-4" /> },
-  High:     { label: "مرتفع",  color: "text-orange-500 bg-orange-500/10 border-orange-500/20",   icon: <TrendingDown className="w-4 h-4" /> },
-  Critical: { label: "حرج",    color: "text-red-500 bg-red-500/10 border-red-500/20",             icon: <AlertTriangle className="w-4 h-4" /> },
-};
-
-function getRiskConfig(level: string) {
-  return RISK_CONFIG[level] ?? RISK_CONFIG.Medium;
-}
 
 export function AITab() {
   const { businessId, currency } = useAuth();
+  const t = useT();
   const [additionalContext, setAdditionalContext] = useState("");
   const [result, setResult] = useState<AIAnalysisResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const RISK_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    Low:      { label: t("ai.riskLow"),      color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", icon: <CheckCircle2 className="w-4 h-4" /> },
+    Medium:   { label: t("ai.riskMedium"),   color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",   icon: <AlertTriangle className="w-4 h-4" /> },
+    High:     { label: t("ai.riskHigh"),     color: "text-orange-500 bg-orange-500/10 border-orange-500/20",   icon: <TrendingDown className="w-4 h-4" /> },
+    Critical: { label: t("ai.riskCritical"), color: "text-red-500 bg-red-500/10 border-red-500/20",             icon: <AlertTriangle className="w-4 h-4" /> },
+  };
+
+  function getRiskConfig(level: string) {
+    return RISK_CONFIG[level] ?? RISK_CONFIG.Medium;
+  }
+
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!businessId) {
-      toast.error("لم يتم العثور على بيانات المشروع. يرجى إكمال الإعداد أولاً.");
+      toast.error(t("ai.noBusinessError"));
       return;
     }
 
@@ -49,7 +51,7 @@ export function AITab() {
       const message =
         error instanceof ApiError
           ? error.message
-          : "عذراً، حدث خطأ أثناء تحليل بياناتك. حاول مرة أخرى.";
+          : t("ai.analysisError");
       toast.error(message);
     } finally {
       setIsLoading(false);
@@ -69,9 +71,9 @@ export function AITab() {
           <Bot className="w-10 h-10" />
         </div>
         <div className="relative z-10">
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight mb-4 text-foreground">المستشار المالي الذكي</h2>
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight mb-4 text-foreground">{t("ai.title")}</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto text-sm md:text-base leading-relaxed">
-            يحلل الذكاء الاصطناعي بياناتك المالية الفعلية من آخر 3 أشهر ويقدم تقريراً شاملاً يتضمن تحليل المخاطر والتوصيات وفرص التحسين.
+            {t("ai.description")}
           </p>
         </div>
       </div>
@@ -81,16 +83,16 @@ export function AITab() {
           <Card className="shadow-lg border-border/80 overflow-hidden relative">
             <div className="absolute top-0 inset-x-0 h-1 bg-[#0052FC]" />
             <CardHeader className="bg-secondary/10 pb-6 border-b border-border/40 pt-8">
-              <CardTitle className="text-xl">التحليل الذكي</CardTitle>
-              <CardDescription>يعتمد على بياناتك الفعلية المسجّلة في النظام</CardDescription>
+              <CardTitle className="text-xl">{t("ai.analysisTitle")}</CardTitle>
+              <CardDescription>{t("ai.analysisDescription")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 pt-6">
               <div className="space-y-2.5">
                 <Label className="text-sm font-semibold">
-                  سياق إضافي <span className="opacity-50 font-normal">(اختياري)</span>
+                  {t("ai.additionalContext")} <span className="opacity-50 font-normal">{t("ai.optional")}</span>
                 </Label>
                 <Textarea
-                  placeholder="مثال: لديّ مشروع جديد قيد الإطلاق الشهر القادم، أو أواجه تأخراً في تحصيل المدفوعات..."
+                  placeholder={t("ai.contextPlaceholder")}
                   value={additionalContext}
                   onChange={(e) => setAdditionalContext(e.target.value)}
                   rows={4}
@@ -98,7 +100,7 @@ export function AITab() {
                 />
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                سيقوم النظام بتحليل بيانات الدخل والمصروفات والفواتير الخاصة بمشروعك تلقائياً.
+                {t("ai.autoAnalysis")}
               </p>
             </CardContent>
             <CardFooter className="pb-6 px-6">
@@ -109,7 +111,7 @@ export function AITab() {
                 disabled={isLoading || !businessId}
               >
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {isLoading ? "جاري التحليل..." : "بدء التحليل الذكي"}
+                {isLoading ? t("ai.analyzing") : t("ai.startAnalysis")}
               </Button>
             </CardFooter>
           </Card>
@@ -126,34 +128,32 @@ export function AITab() {
                   </div>
                 </div>
                 <div className="space-y-2 max-w-sm">
-                  <h3 className="text-xl font-bold text-foreground">جاري إعداد التقرير...</h3>
-                  <p className="text-sm text-muted-foreground">يقوم الذكاء الاصطناعي بدراسة بياناتك المالية الفعلية واستخراج التوصيات والمخاطر.</p>
+                  <h3 className="text-xl font-bold text-foreground">{t("ai.preparingReport")}</h3>
+                  <p className="text-sm text-muted-foreground">{t("ai.preparingDesc")}</p>
                 </div>
               </div>
             </Card>
           ) : result ? (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-500">
 
-              {/* Header + Risk Level */}
               <div className="flex items-center justify-between gap-4 pb-2">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0">
                     <Sparkles className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xl md:text-2xl font-bold">تقرير التحليل المالي</h3>
-                    <p className="text-sm text-muted-foreground mt-0.5">بناءً على بياناتك الفعلية من آخر 3 أشهر</p>
+                    <h3 className="text-xl md:text-2xl font-bold">{t("ai.reportTitle")}</h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">{t("ai.reportSubtitle")}</p>
                   </div>
                 </div>
                 {riskConfig && (
                   <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border ${riskConfig.color}`}>
                     {riskConfig.icon}
-                    مستوى الخطر: {riskConfig.label}
+                    {t("ai.riskLevel")}: {riskConfig.label}
                   </span>
                 )}
               </div>
 
-              {/* Projected Cashflow */}
               <Card className="border-border/60 shadow-sm">
                 <CardContent className="pt-6 pb-5">
                   <div className="flex items-center gap-3">
@@ -161,21 +161,20 @@ export function AITab() {
                       <TrendingUp className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">التدفق النقدي المتوقع</p>
+                      <p className="text-sm text-muted-foreground">{t("ai.projectedCashflow")}</p>
                       <p className={`text-2xl font-bold ${result.projectedCashflow >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                        {result.projectedCashflow.toLocaleString("ar-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency ?? "AED"}
+                        {result.projectedCashflow.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency ?? "AED"}
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Risk Analysis */}
               <Card className="border-border/60 shadow-sm">
                 <CardHeader className="pb-3 pt-5">
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-orange-500" />
-                    تحليل المخاطر
+                    {t("ai.riskAnalysis")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-5">
@@ -183,13 +182,12 @@ export function AITab() {
                 </CardContent>
               </Card>
 
-              {/* Recommendations */}
               {result.recommendations.length > 0 && (
                 <Card className="border-border/60 shadow-sm">
                   <CardHeader className="pb-3 pt-5">
                     <CardTitle className="text-base flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      التوصيات
+                      {t("ai.recommendations")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pb-5">
@@ -205,13 +203,12 @@ export function AITab() {
                 </Card>
               )}
 
-              {/* Optimization Opportunities */}
               {result.optimizationOpportunities.length > 0 && (
                 <Card className="border-border/60 shadow-sm">
                   <CardHeader className="pb-3 pt-5">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Lightbulb className="w-4 h-4 text-yellow-500" />
-                      فرص التحسين
+                      {t("ai.optimizationOpportunities")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pb-5">
@@ -233,9 +230,9 @@ export function AITab() {
                 <div className="w-24 h-24 rounded-3xl bg-secondary flex items-center justify-center mb-6 shadow-sm border border-border/50">
                   <Send className="w-10 h-10 text-muted-foreground/30 -ml-2 translate-y-1" />
                 </div>
-                <h3 className="text-xl font-bold text-foreground mb-2">أنا بانتظارك</h3>
+                <h3 className="text-xl font-bold text-foreground mb-2">{t("ai.waitingTitle")}</h3>
                 <p className="text-muted-foreground text-sm leading-relaxed">
-                  اضغط على زر &quot;بدء التحليل الذكي&quot; وسأقوم بتحليل بياناتك المالية الفعلية وتقديم تقرير شامل يساعدك في اتخاذ قرارات أفضل.
+                  {t("ai.waitingDesc")}
                 </p>
               </div>
             </Card>

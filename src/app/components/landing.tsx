@@ -8,7 +8,7 @@ import { LandingFooter } from "./landing/footer";
 
 export function Landing() {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8F9FA] relative overflow-hidden font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F8F9FA] relative overflow-hidden font-sans pt-[88px]">
       <LandingNav />
       <LandingHero />
       <LandingFeatures />

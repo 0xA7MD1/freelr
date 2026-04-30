@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
-import { arSA } from "date-fns/locale";
+import { arSA, enUS } from "date-fns/locale";
 import { CalendarDays, Edit2, Loader2, Plus, Search, Trash2, TrendingUp, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/shared/ui/button";
@@ -21,20 +21,22 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/shared/ui/select";
 import { Textarea } from "@/components/shared/ui/textarea";
 import { ApiError, isApiConfigured } from "@/lib/api/client";
 import { incomeApi } from "@/lib/api/income";
-import { MOCK_INCOME, MOCK_INCOME_CATEGORIES } from "@/lib/api/mocks";
-import type { IncomeCategory, IncomeEntry } from "@/lib/api/types";
+import { clientsApi } from "@/lib/api/clients";
+import { MOCK_INCOME, MOCK_INCOME_CATEGORIES, MOCK_CLIENTS } from "@/lib/api/mocks";
+import type { Client, IncomeCategory, IncomeEntry } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useFetch } from "@/lib/hooks/use-fetch";
+import { useT, useLanguage } from "@/lib/i18n";
+import { ConfirmDeleteDialog } from "@/components/shared/ui/confirm-delete-dialog";
 
-function safeFormatDate(value?: string) {
+function safeFormatDate(value: string | undefined, locale: string) {
   if (!value) return "-";
   try {
-    return format(parseISO(value), "dd MMM yyyy", { locale: arSA });
+    return format(parseISO(value), "dd MMM yyyy", { locale: locale === "ar" ? arSA : enUS });
   } catch {
     return value;
   }
@@ -55,6 +57,7 @@ interface IncomeFormModalProps {
   categoriesLoading: boolean;
   editing?: IncomeEntry;
   onSaved: (income: IncomeEntry, isNew: boolean) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function IncomeFormModal({
@@ -68,21 +71,54 @@ function IncomeFormModal({
   categoriesLoading,
   editing,
   onSaved,
+  t,
 }: IncomeFormModalProps) {
+  const { locale } = useLanguage();
   const isEdit = !!editing;
-  const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
-  const [description, setDescription] = useState(editing?.description ?? editing?.source ?? "");
-  const [categoryId, setCategoryId] = useState(editing?.categoryId ?? "");
-  const [notes, setNotes] = useState(editing?.notes ?? "");
-  const [transactionDate, setTransactionDate] = useState(
-    editing ? getIncomeDate(editing).slice(0, 10) : new Date().toISOString().slice(0, 10),
-  );
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+
+  // Sync form fields whenever the entry being edited changes
+  useEffect(() => {
+    if (editing) {
+      setAmount(String(editing.amount));
+      setDescription(editing.description ?? editing.source ?? "");
+      setCategoryId(editing.categoryId ?? "");
+      setClientId(editing.clientId ?? "");
+      setNotes(editing.notes ?? "");
+      setTransactionDate(getIncomeDate(editing).slice(0, 10));
+    } else {
+      setAmount("");
+      setDescription("");
+      setCategoryId("");
+      setClientId("");
+      setNotes("");
+      setTransactionDate(new Date().toISOString().slice(0, 10));
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!apiOn) { setClients(MOCK_CLIENTS); return; }
+    setClientsLoading(true);
+    clientsApi.list(businessId)
+      .then(setClients)
+      .catch(() => {})
+      .finally(() => setClientsLoading(false));
+  }, [open, apiOn, businessId]);
 
   const reset = () => {
     setAmount("");
     setDescription("");
     setCategoryId("");
+    setClientId("");
     setNotes("");
     setTransactionDate(new Date().toISOString().slice(0, 10));
   };
@@ -99,17 +135,17 @@ function IncomeFormModal({
     const numericAmount = Number.parseFloat(amount);
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      toast.error("يرجى إدخال مبلغ صالح أكبر من صفر.");
+      toast.error(t("incomePage.amountError"));
       return;
     }
 
     if (!description.trim()) {
-      toast.error("يرجى إدخال مصدر الدخل.");
+      toast.error(t("incomePage.sourceError"));
       return;
     }
 
     if (!categoryId.trim()) {
-      toast.error("يرجى اختيار تصنيف الدخل.");
+      toast.error(t("incomePage.categoryError"));
       return;
     }
 
@@ -121,6 +157,7 @@ function IncomeFormModal({
       description: description.trim(),
       transactionDate,
       categoryId,
+      clientId: clientId || undefined,
       notes: notes.trim() || undefined,
     };
 
@@ -135,10 +172,11 @@ function IncomeFormModal({
             incomeDate: payload.transactionDate,
             category: selectedCategory?.name ?? editing.category,
             categoryName: selectedCategory?.name ?? editing.categoryName,
+            clientId: payload.clientId,
           },
           false,
         );
-        toast.success("تم تحديث الدخل بنجاح");
+        toast.success(t("incomePage.updateSuccess"));
       } else {
         const result = apiOn ? await incomeApi.create(payload) : { id: `local-${Date.now()}` };
         onSaved(
@@ -150,17 +188,18 @@ function IncomeFormModal({
             categoryId: payload.categoryId,
             category: selectedCategory?.name,
             categoryName: selectedCategory?.name,
+            clientId: payload.clientId,
             transactionDate,
             incomeDate: transactionDate,
             notes: payload.notes,
           },
           true,
         );
-        toast.success("تم تسجيل الدخل بنجاح");
+        toast.success(t("incomePage.addSuccess"));
       }
       handleClose();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "حدث خطأ. حاول مرة أخرى.");
+      toast.error(err instanceof ApiError ? err.message : t("incomePage.error"));
     } finally {
       setBusy(false);
     }
@@ -170,12 +209,12 @@ function IncomeFormModal({
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "تعديل الدخل" : "إضافة دخل جديد"}</DialogTitle>
+          <DialogTitle>{isEdit ? t("incomePage.form.editTitle") : t("incomePage.form.addTitle")}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>المبلغ ({currency})</Label>
+              <Label>{t("incomePage.form.amount")} ({currency})</Label>
               <Input
                 type="number"
                 inputMode="decimal"
@@ -188,7 +227,7 @@ function IncomeFormModal({
               />
             </div>
             <div className="space-y-2">
-              <Label>التاريخ</Label>
+              <Label>{t("incomePage.form.date")}</Label>
               <Input
                 type="date"
                 value={transactionDate}
@@ -199,9 +238,9 @@ function IncomeFormModal({
           </div>
 
           <div className="space-y-2">
-            <Label>مصدر الدخل <span className="text-destructive">*</span></Label>
+            <Label>{t("incomePage.form.source")} <span className="text-destructive">*</span></Label>
             <Input
-              placeholder="مثال: ورشة تدريب، بيع منتج، عمولة"
+              placeholder={t("incomePage.form.sourcePlaceholder")}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               className="bg-secondary/50 border-transparent focus-visible:ring-primary"
@@ -209,16 +248,21 @@ function IncomeFormModal({
           </div>
 
           <div className="space-y-2">
-            <Label>تصنيف الدخل <span className="text-destructive">*</span></Label>
+            <Label>{t("incomePage.form.category")} <span className="text-destructive">*</span></Label>
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
               <SelectTrigger
-                dir="rtl"
+                dir={locale === "ar" ? "rtl" : "ltr"}
                 className="h-10 w-full bg-secondary/50 border-transparent focus:ring-primary"
                 disabled={busy || categoriesLoading || categories.length === 0}
               >
-                <SelectValue placeholder={categoriesLoading ? "جاري تحميل التصنيفات..." : "اختر التصنيف"} />
+                <span className="flex-1 text-start text-sm truncate" data-slot="select-value">
+                  {categoryId
+                    ? (categories.find(c => c.id === categoryId)?.name ?? categoryId)
+                    : <span className="text-muted-foreground">{categoriesLoading ? t("incomePage.form.loadingCategories") : t("incomePage.form.categoryPlaceholder")}</span>
+                  }
+                </span>
               </SelectTrigger>
-              <SelectContent dir="rtl">
+              <SelectContent dir={locale === "ar" ? "rtl" : "ltr"}>
                 {categories.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
                     {category.name}
@@ -227,14 +271,39 @@ function IncomeFormModal({
               </SelectContent>
             </Select>
             {!categoriesLoading && categories.length === 0 && (
-              <p className="text-xs text-destructive">لا توجد تصنيفات دخل متاحة لهذا النشاط.</p>
+              <p className="text-xs text-destructive">{t("incomePage.form.noCategories")}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label>ملاحظات</Label>
+            <Label>{t("incomePage.form.client")} <span className="text-muted-foreground text-xs font-normal">{t("incomePage.form.clientOptional")}</span></Label>
+            <Select value={clientId} onValueChange={(v) => setClientId(v ?? "")}>
+              <SelectTrigger dir={locale === "ar" ? "rtl" : "ltr"} className="h-10 w-full bg-secondary/50 border-transparent focus:ring-primary">
+                <span className="flex-1 text-start text-sm truncate" data-slot="select-value">
+                  {clientId
+                    ? (() => {
+                        const c = clients.find((x) => x.id === clientId);
+                        return c ? (c.fullName || `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || clientId) : clientId;
+                      })()
+                    : <span className="text-muted-foreground">{clientsLoading ? t("incomePage.form.loadingClients") : t("incomePage.form.noClient")}</span>
+                  }
+                </span>
+              </SelectTrigger>
+              <SelectContent dir={locale === "ar" ? "rtl" : "ltr"}>
+                <SelectItem value="">{t("incomePage.form.noClient")}</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.fullName || `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("incomePage.form.notes")}</Label>
             <Textarea
-              placeholder="أي تفاصيل إضافية عن الدخل"
+              placeholder={t("incomePage.form.notesPlaceholder")}
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               className="min-h-24 bg-secondary/50 border-transparent focus-visible:ring-primary"
@@ -242,10 +311,10 @@ function IncomeFormModal({
           </div>
 
           <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>إلغاء</Button>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>{t("incomePage.form.cancel")}</Button>
             <Button type="submit" disabled={busy || categoriesLoading || categories.length === 0} className="gap-2">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : isEdit ? <Edit2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              {busy ? "جاري الحفظ..." : isEdit ? "حفظ التعديلات" : "إضافة الدخل"}
+              {busy ? t("incomePage.form.saving") : isEdit ? t("incomePage.form.save") : t("incomePage.form.submit")}
             </Button>
           </DialogFooter>
         </form>
@@ -256,6 +325,8 @@ function IncomeFormModal({
 
 export function IncomeTab() {
   const { businessId, user, currency } = useAuth();
+  const t = useT();
+  const { locale } = useLanguage();
   const userId = user?.id ?? "";
   const curr = currency ?? "AED";
   const apiOn = isApiConfigured() && !!businessId;
@@ -279,7 +350,7 @@ export function IncomeTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<IncomeEntry | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -310,20 +381,13 @@ export function IncomeTab() {
     });
   };
 
-  const handleDeleteClick = (id: string) => {
-    if (deleteConfirmId === id) {
-      void handleDeleteConfirm(id);
-      return;
-    }
-    setDeleteConfirmId(id);
-    setTimeout(() => setDeleteConfirmId((current) => current === id ? null : current), 3000);
-  };
-
-  const handleDeleteConfirm = async (id: string) => {
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget;
     if (!apiOn) {
       setData((prev) => (prev ?? []).filter((entry) => entry.id !== id));
-      setDeleteConfirmId(null);
-      toast.success("تم حذف الدخل");
+      setDeleteTarget(null);
+      toast.success(t("incomePage.deleteSuccess"));
       return;
     }
 
@@ -332,10 +396,10 @@ export function IncomeTab() {
     try {
       await incomeApi.remove(id, businessId!, userId);
       setData((prev) => (prev ?? []).filter((entry) => entry.id !== id));
-      setDeleteConfirmId(null);
-      toast.success("تم حذف الدخل بنجاح");
+      setDeleteTarget(null);
+      toast.success(t("incomePage.deleteSuccess"));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "فشل حذف الدخل.");
+      toast.error(err instanceof ApiError ? err.message : t("incomePage.deleteError"));
     } finally {
       setDeleteId(null);
       setDeleteBusy(false);
@@ -344,10 +408,16 @@ export function IncomeTab() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        loading={deleteBusy}
+      />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">إجمالي الدخل</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.total")}</p>
             <p className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
               {totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -356,7 +426,7 @@ export function IncomeTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">متوسط الدخل</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.average")}</p>
             <p className="text-2xl font-bold font-mono">
               {averageIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -365,15 +435,15 @@ export function IncomeTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">عدد العمليات</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.count")}</p>
             <p className="text-2xl font-bold">{income.length}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">آخر دخل</p>
-            <p className="text-sm font-medium truncate">{latestIncome?.description ?? "لا يوجد"}</p>
-            <p className="text-xs text-muted-foreground mt-1">{latestIncome ? safeFormatDate(getIncomeDate(latestIncome)) : "-"}</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.latest")}</p>
+            <p className="text-sm font-medium truncate">{latestIncome?.description ?? t("incomePage.stats.noLatest")}</p>
+            <p className="text-xs text-muted-foreground mt-1">{latestIncome ? safeFormatDate(getIncomeDate(latestIncome), locale) : "-"}</p>
           </CardContent>
         </Card>
       </div>
@@ -382,7 +452,7 @@ export function IncomeTab() {
         <CardHeader className="px-6 py-4 border-b border-border flex-row items-center justify-between gap-3 space-y-0">
           <div className="flex items-center gap-3">
             <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            <CardTitle className="text-base font-bold">سجل الدخل</CardTitle>
+            <CardTitle className="text-base font-bold">{t("incomePage.tableTitle")}</CardTitle>
             {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
           </div>
           <div className="flex items-center gap-2">
@@ -391,13 +461,13 @@ export function IncomeTab() {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="بحث"
+                placeholder={t("incomePage.search")}
                 className="h-9 w-44 bg-secondary/50 border-transparent pr-9"
               />
             </div>
             <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5 h-9">
               <Plus className="w-4 h-4" />
-              دخل جديد
+              {t("incomePage.addNew")}
             </Button>
           </div>
         </CardHeader>
@@ -408,7 +478,7 @@ export function IncomeTab() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="بحث في الدخل"
+              placeholder={t("incomePage.searchMobile")}
               className="bg-secondary/50 border-transparent pr-9"
             />
           </div>
@@ -418,12 +488,12 @@ export function IncomeTab() {
           <table className="w-full text-right text-sm min-w-[max(680px,100%)]">
             <thead className="bg-secondary/50 text-muted-foreground text-xs">
               <tr className="border-b border-border">
-                <th className="px-5 py-3 font-medium">التاريخ</th>
-                <th className="px-5 py-3 font-medium">مصدر الدخل</th>
-                <th className="px-5 py-3 font-medium">التصنيف</th>
-                <th className="px-5 py-3 font-medium">ملاحظات</th>
-                <th className="px-5 py-3 font-medium">المبلغ ({curr})</th>
-                <th className="px-5 py-3 font-medium text-center">إجراءات</th>
+                <th className="px-5 py-3 font-medium">{t("incomePage.table.date")}</th>
+                <th className="px-5 py-3 font-medium">{t("incomePage.table.source")}</th>
+                <th className="px-5 py-3 font-medium">{t("incomePage.table.category")}</th>
+                <th className="px-5 py-3 font-medium">{t("incomePage.table.notes")}</th>
+                <th className="px-5 py-3 font-medium">{t("incomePage.table.amount")} ({curr})</th>
+                <th className="px-5 py-3 font-medium text-center">{t("incomePage.table.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -434,7 +504,7 @@ export function IncomeTab() {
                     <td className="px-5 py-3.5 text-muted-foreground whitespace-nowrap">
                       <span className="inline-flex items-center gap-2">
                         <CalendarDays className="h-4 w-4" />
-                        {safeFormatDate(getIncomeDate(entry))}
+                        {safeFormatDate(getIncomeDate(entry), locale)}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
@@ -460,20 +530,16 @@ export function IncomeTab() {
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => setEditTarget(entry)}
-                          title="تعديل"
+                          title={t("incomePage.editTooltip")}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary transition-colors"
                         >
                           <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                         </button>
                         <button
-                          onClick={() => handleDeleteClick(entry.id)}
+                          onClick={() => setDeleteTarget(entry.id)}
                           disabled={isDeleting}
-                          title={deleteConfirmId === entry.id ? "اضغط مرة أخرى للتأكيد" : "حذف"}
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-                            deleteConfirmId === entry.id
-                              ? "bg-destructive/10 text-destructive"
-                              : "hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                          }`}
+                          title={t("incomePage.deleteTooltip")}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                         >
                           {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                         </button>
@@ -486,10 +552,10 @@ export function IncomeTab() {
                 <tr>
                   <td colSpan={6} className="text-center text-muted-foreground py-12">
                     <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                    <p>{query ? "لا توجد نتائج مطابقة للبحث" : "لم يتم تسجيل دخل بعد"}</p>
+                    <p>{query ? t("incomePage.noSearchResults") : t("incomePage.noEntries")}</p>
                     <Button onClick={() => setCreateOpen(true)} variant="outline" size="sm" className="mt-3 gap-1.5">
                       <Plus className="w-4 h-4" />
-                      أضف أول دخل
+                      {t("incomePage.addFirst")}
                     </Button>
                   </td>
                 </tr>
@@ -509,6 +575,7 @@ export function IncomeTab() {
         categories={categories}
         categoriesLoading={categoriesLoading}
         onSaved={handleSaved}
+        t={t}
       />
 
       <IncomeFormModal
@@ -525,6 +592,7 @@ export function IncomeTab() {
           handleSaved(entry, isNew);
           setEditTarget(null);
         }}
+        t={t}
       />
     </div>
   );

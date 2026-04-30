@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Loader2, RefreshCw, Wallet } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Loader2, RefreshCw, Sparkles, Wallet } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/shared/ui/dialog";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFetch } from "@/lib/hooks/use-fetch";
 import { dashboardApi } from "@/lib/api/dashboard";
 import { invoicesApi } from "@/lib/api/invoices";
 import { forecastApi } from "@/lib/api/forecast";
 import { apiErrorMessage, isApiConfigured } from "@/lib/api/client";
+import { aiApi } from "@/lib/api/ai";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useT } from "@/lib/i18n";
 import {
   MOCK_CHART,
   MOCK_CURRENCY,
@@ -23,6 +26,7 @@ import {
 } from "@/lib/api/mocks";
 import {
   InvoiceStatus,
+  type AIAnalysisResponse,
   type AIInsight,
   type Alert,
   type DashboardChartsData,
@@ -32,27 +36,27 @@ import {
   type LiquidityAlert,
 } from "@/lib/api/types";
 
-const INVOICE_STATUS_LABEL: Record<number, { label: string; className: string }> = {
-  [InvoiceStatus.Draft]: { label: "مسودة", className: "bg-slate-100 text-slate-700" },
-  [InvoiceStatus.Sent]: { label: "مُرسلة", className: "bg-blue-100 text-blue-700" },
-  [InvoiceStatus.Paid]: { label: "مدفوعة", className: "bg-emerald-100 text-emerald-700" },
-  [InvoiceStatus.PartiallyPaid]: { label: "مدفوعة جزئياً", className: "bg-amber-100 text-amber-700" },
-  [InvoiceStatus.Overdue]: { label: "متأخرة", className: "bg-red-100 text-red-700" },
-  [InvoiceStatus.Cancelled]: { label: "ملغاة", className: "bg-gray-100 text-gray-500" },
-};
-
-function getStatusLabel(status: InvoiceStatus | string | number) {
+function getStatusLabel(t: ReturnType<typeof useT>, status: InvoiceStatus | string | number) {
+  const STATUS_MAP: Record<number, { labelKey: string; className: string }> = {
+    [InvoiceStatus.Draft]:         { labelKey: "dashboard.invoiceStatus.draft",         className: "bg-slate-100 text-slate-700" },
+    [InvoiceStatus.Sent]:          { labelKey: "dashboard.invoiceStatus.sent",          className: "bg-blue-100 text-blue-700" },
+    [InvoiceStatus.Paid]:          { labelKey: "dashboard.invoiceStatus.paid",          className: "bg-emerald-100 text-emerald-700" },
+    [InvoiceStatus.PartiallyPaid]: { labelKey: "dashboard.invoiceStatus.partiallyPaid", className: "bg-amber-100 text-amber-700" },
+    [InvoiceStatus.Overdue]:       { labelKey: "dashboard.invoiceStatus.overdue",       className: "bg-red-100 text-red-700" },
+    [InvoiceStatus.Cancelled]:     { labelKey: "dashboard.invoiceStatus.cancelled",     className: "bg-gray-100 text-gray-500" },
+  };
   const key = typeof status === "string" ? InvoiceStatus[status as keyof typeof InvoiceStatus] ?? 0 : Number(status);
-  return INVOICE_STATUS_LABEL[key] ?? { label: String(status), className: "bg-gray-100 text-gray-500" };
+  const meta = STATUS_MAP[key] ?? { labelKey: "dashboard.invoiceStatus.draft", className: "bg-gray-100 text-gray-500" };
+  return { label: t(meta.labelKey), className: meta.className };
 }
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US");
 }
 
-function formatDate(dateStr: string) {
+function formatDate(dateStr: string, locale: string) {
   try {
-    return new Date(dateStr).toLocaleDateString("ar-AE");
+    return new Date(dateStr).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-US");
   } catch {
     return dateStr;
   }
@@ -60,8 +64,12 @@ function formatDate(dateStr: string) {
 
 export function OverviewTab() {
   const { businessId, currency } = useAuth();
+  const t = useT();
   const apiOn = isApiConfigured() && !!businessId;
   const demoMode = !apiOn;
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planResult, setPlanResult] = useState<AIAnalysisResponse | null>(null);
 
   const { data: overviewData, isLoading, error: overviewError, refetch: refetchOverview } = useFetch<DashboardOverview>(
     () => dashboardApi.overview(businessId!),
@@ -100,14 +108,13 @@ export function OverviewTab() {
       .generate(businessId!)
       .then(setForecastData)
       .catch((err) => {
-        toast.error(`تعذر توليد توصيات الذكاء الاصطناعي: ${apiErrorMessage(err)}`);
+        toast.error(`${t("dashboard.overview.aiError")}: ${apiErrorMessage(err)}`);
       })
       .finally(() => {
         generatingForecast.current = false;
       });
-  }, [apiOn, businessId, forecastLoading, setForecastData]);
+  }, [apiOn, businessId, forecastLoading, setForecastData, t]);
 
-  // Surface non-critical errors as Arabic toasts (once each)
   const toastedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const announce = (key: string, prefix: string, err: Error | null) => {
@@ -115,10 +122,10 @@ export function OverviewTab() {
       toastedRef.current.add(key);
       toast.error(`${prefix}: ${apiErrorMessage(err)}`);
     };
-    announce("charts", "تعذر تحميل الرسم البياني", chartsError);
-    announce("invoices", "تعذر تحميل الفواتير الأخيرة", invoicesError);
-    announce("alerts", "تعذر تحميل التنبيهات", alertsError);
-  }, [chartsError, invoicesError, alertsError]);
+    announce("charts", t("dashboard.overview.chartsError"), chartsError);
+    announce("invoices", t("dashboard.overview.invoicesError"), invoicesError);
+    announce("alerts", t("dashboard.overview.alertsError"), alertsError);
+  }, [chartsError, invoicesError, alertsError, t]);
 
   const overview = overviewData;
 
@@ -130,19 +137,29 @@ export function OverviewTab() {
       ? MOCK_PROFIT_MARGIN_PCT
       : 0;
 
+  const incomeLabel = t("dashboard.overview.income");
+  const expensesLabel = t("dashboard.overview.expensesChart");
+
   const chartData = useMemo(() => {
+    const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return { key, label: SHORT_MONTHS[d.getMonth()] };
+    });
+
     if (chartsData?.incomeByMonth?.length) {
-      return chartsData.incomeByMonth.map((pt, i) => ({
-        name: pt.month,
-        دخل: pt.total,
-        مصروفات: chartsData.expensesByMonth[i]?.total ?? 0,
+      const incomeMap = Object.fromEntries(chartsData.incomeByMonth.map((p) => [p.month, p.amount]));
+      const expenseMap = Object.fromEntries(chartsData.expensesByMonth.map((p) => [p.month, p.amount]));
+      return months.map(({ key, label }) => ({
+        name: label,
+        [incomeLabel]: incomeMap[key] ?? 0,
+        [expensesLabel]: expenseMap[key] ?? 0,
       }));
     }
-    if (demoMode) {
-      return MOCK_CHART.map((p) => ({ name: p.name, دخل: p.income, مصروفات: p.expenses }));
-    }
-    return [];
-  }, [chartsData, demoMode]);
+    return MOCK_CHART.map((p) => ({ name: p.name, [incomeLabel]: p.income, [expensesLabel]: p.expenses }));
+  }, [chartsData, incomeLabel, expensesLabel]);
 
   const recentInvoices = useMemo(() => {
     if (invoicesData?.length) {
@@ -150,7 +167,7 @@ export function OverviewTab() {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
         client: inv.clientName,
-        date: formatDate(inv.issueDate ?? inv.dueDate),
+        date: formatDate(inv.issueDate ?? inv.dueDate, "ar"),
         amount: inv.total,
         currency: currency ?? MOCK_CURRENCY,
         status: inv.status,
@@ -171,7 +188,6 @@ export function OverviewTab() {
   }, [forecastData]);
 
   const liquidityAlert: LiquidityAlert | null = useMemo(() => {
-    // Use real dashboard alerts as the primary source
     const WARNING_TYPES = ["CashflowWarning", "LowBalance", "HighExpense", "OverdueInvoice"];
     const SEVERITY_ORDER = ["Critical", "Error", "Warning", "Info"];
 
@@ -190,7 +206,6 @@ export function OverviewTab() {
       };
     }
 
-    // Fallback: derive from forecast if no alert but risk is high
     if (forecastData) {
       const shortage = forecastData.expectedShortage ?? 0;
       const riskLevel = String(forecastData.riskLevel ?? "Low");
@@ -209,6 +224,24 @@ export function OverviewTab() {
     return null;
   }, [dashboardAlerts, forecastData, currency]);
 
+  const handleViewPlan = async () => {
+    setPlanResult(null);
+    setPlanOpen(true);
+    setPlanLoading(true);
+    try {
+      const result = await aiApi.analyze({
+        businessId: businessId!,
+        additionalContext: liquidityAlert?.message,
+      });
+      setPlanResult(result);
+    } catch (err) {
+      toast.error(apiErrorMessage(err as Error));
+      setPlanOpen(false);
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
   if (isLoading && !overview) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -224,12 +257,12 @@ export function OverviewTab() {
           <AlertCircle className="w-6 h-6 text-destructive" />
         </div>
         <div className="space-y-1 max-w-md">
-          <h3 className="font-bold text-base">تعذر تحميل البيانات</h3>
+          <h3 className="font-bold text-base">{t("common.loadError")}</h3>
           <p className="text-sm text-muted-foreground">{apiErrorMessage(overviewError)}</p>
         </div>
         <Button onClick={() => void refetchOverview()} variant="outline" className="gap-2">
           <RefreshCw className="w-4 h-4" />
-          إعادة المحاولة
+          {t("common.retry")}
         </Button>
       </div>
     );
@@ -238,7 +271,7 @@ export function OverviewTab() {
   if (!overview) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
-        لا توجد بيانات لعرضها بعد.
+        {t("common.noData")}
       </div>
     );
   }
@@ -247,7 +280,7 @@ export function OverviewTab() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       {demoMode && (
         <div className="text-xs text-muted-foreground bg-secondary/40 border border-border/50 rounded-md px-3 py-2">
-          يتم عرض بيانات تجريبية — سيتم استبدالها بالبيانات الحقيقية عند ربط الواجهة بالخادم.
+          {t("common.demoMode")}
         </div>
       )}
 
@@ -261,7 +294,7 @@ export function OverviewTab() {
             onClick={() => void refetchOverview()}
             className="text-xs font-semibold text-destructive hover:underline shrink-0"
           >
-            إعادة المحاولة
+            {t("common.retry")}
           </button>
         </div>
       )}
@@ -277,8 +310,8 @@ export function OverviewTab() {
           </div>
           <div className="relative z-10 flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400 bg-orange-200 dark:bg-orange-900/50 px-2 py-0.5 rounded">تنبيه ذكي</span>
-              <h3 className="font-bold text-base md:text-lg text-foreground truncate">تحذير سيولة للشهر القادم</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400 bg-orange-200 dark:bg-orange-900/50 px-2 py-0.5 rounded">{t("dashboard.overview.smartAlert")}</span>
+              <h3 className="font-bold text-base md:text-lg text-foreground truncate">{t("dashboard.overview.liquidityWarning")}</h3>
             </div>
             <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl break-words">
               {liquidityAlert.message.replace(
@@ -288,8 +321,14 @@ export function OverviewTab() {
             </p>
           </div>
           <div className="relative z-10 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
-            <Button variant="outline" className="w-full sm:w-auto border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 hover:text-orange-800 dark:hover:text-orange-300 font-semibold rounded-md h-10 px-6 transition-colors">
-              عرض خطة المعالجة
+            <Button
+              variant="outline"
+              onClick={() => void handleViewPlan()}
+              disabled={planLoading || demoMode}
+              className="w-full sm:w-auto border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 hover:text-orange-800 dark:hover:text-orange-300 font-semibold rounded-md h-10 px-6 transition-colors gap-2"
+            >
+              {planLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {t("dashboard.overview.viewPlan")}
             </Button>
           </div>
         </div>
@@ -297,30 +336,31 @@ export function OverviewTab() {
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard
-          title="إجمالي الدخل"
+          title={t("dashboard.overview.totalIncome")}
           value={overview.totalIncome}
           currency={currency ?? MOCK_CURRENCY}
           tone="positive"
           icon={<ArrowUpRight className="w-4 h-4" />}
           changePct={incomeChangePct}
-          changeLabel="من الشهر الماضي"
+          changeLabel={t("dashboard.overview.fromLastMonth")}
         />
         <KpiCard
-          title="المصروفات"
+          title={t("dashboard.overview.expenses")}
           value={overview.totalExpenses}
           currency={currency ?? MOCK_CURRENCY}
           tone="negative"
           icon={<ArrowDownRight className="w-4 h-4" />}
           changePct={expenseChangePct}
-          changeLabel="زيادة غير متوقعة"
+          changeLabel={t("dashboard.overview.unexpectedIncrease")}
         />
         <KpiCard
-          title="صافي الربح"
+          title={t("dashboard.overview.netProfit")}
           value={overview.netCashflow}
           currency={currency ?? MOCK_CURRENCY}
           tone="info"
           icon={<Wallet className="w-4 h-4" />}
           margin={profitMarginPct}
+          marginLabel={t("dashboard.overview.profitMargin")}
           extraClass="sm:col-span-2 lg:col-span-1"
         />
       </div>
@@ -328,7 +368,7 @@ export function OverviewTab() {
       <div className="grid gap-6 md:grid-cols-5">
         <Card className="md:col-span-3 shadow-sm border-border min-w-0">
           <CardHeader>
-            <CardTitle className="text-base text-muted-foreground">تحليل السيولة النقدية</CardTitle>
+            <CardTitle className="text-base text-muted-foreground">{t("dashboard.overview.liquidityAnalysis")}</CardTitle>
           </CardHeader>
           <CardContent className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -340,8 +380,8 @@ export function OverviewTab() {
                   contentStyle={{ borderRadius: "12px", border: "1px solid var(--border)", background: "var(--background)" }}
                   itemStyle={{ fontSize: "14px", fontFamily: "var(--font-mono)" }}
                 />
-                <Bar dataKey="دخل" fill="#0052FC" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="مصروفات" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey={incomeLabel} fill="#0052FC" radius={[4, 4, 0, 0]} />
+                <Bar dataKey={expensesLabel} fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -354,7 +394,7 @@ export function OverviewTab() {
                 <div className="bg-[#0052FC]/10 p-1.5 rounded-md">
                   <span className="w-2 h-2 bg-[#0052FC] rounded-full block animate-pulse" />
                 </div>
-                مقترحات الذكاء الاصطناعي
+                {t("dashboard.overview.aiSuggestions")}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4 flex-1">
@@ -385,9 +425,9 @@ export function OverviewTab() {
                 <div className="flex flex-col items-center justify-center h-full py-6 text-center text-muted-foreground gap-2">
                   <span className="text-2xl">🤖</span>
                   <p className="text-xs leading-relaxed max-w-[160px]">
-                    لا توجد توصيات بعد. اذهب إلى{" "}
-                    <a href="/ai" className="text-[#0052FC] hover:underline font-medium">المساعد الذكي</a>
-                    {" "}لتوليد تحليل مالي.
+                    {t("dashboard.overview.noSuggestions")}{" "}
+                    <a href="/ai" className="text-[#0052FC] hover:underline font-medium">{t("dashboard.overview.goToAi")}</a>
+                    {" "}{t("dashboard.overview.noSuggestionsEnd")}
                   </p>
                 </div>
               )}
@@ -398,27 +438,27 @@ export function OverviewTab() {
 
       <Card className="shadow-sm border-border overflow-hidden min-w-0">
         <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-card">
-          <h4 className="font-bold text-sm">الفواتير الأخيرة</h4>
-          <button className="text-muted-foreground text-xs hover:underline">عرض الكل</button>
+          <h4 className="font-bold text-sm">{t("dashboard.overview.recentInvoices")}</h4>
+          <button className="text-muted-foreground text-xs hover:underline">{t("dashboard.overview.viewAll")}</button>
         </div>
         <div className="overflow-x-auto w-full">
           <table className="w-full text-right text-sm whitespace-nowrap min-w-[600px]">
             <thead className="bg-secondary/50 text-muted-foreground text-xs">
               <tr className="border-b border-border">
-                <th className="px-6 py-3 font-medium">العميل</th>
-                <th className="px-6 py-3 font-medium">التاريخ</th>
-                <th className="px-6 py-3 font-medium">المبلغ</th>
-                <th className="px-6 py-3 font-medium">الحالة</th>
+                <th className="px-6 py-3 font-medium">{t("dashboard.overview.client")}</th>
+                <th className="px-6 py-3 font-medium">{t("dashboard.overview.date")}</th>
+                <th className="px-6 py-3 font-medium">{t("dashboard.overview.amount")}</th>
+                <th className="px-6 py-3 font-medium">{t("dashboard.overview.status")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {recentInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-center text-muted-foreground py-8">لا توجد فواتير لعرضها بعد.</td>
+                  <td colSpan={4} className="text-center text-muted-foreground py-8">{t("dashboard.overview.noInvoices")}</td>
                 </tr>
               ) : (
                 recentInvoices.map((inv) => {
-                  const statusMeta = getStatusLabel(inv.status);
+                  const statusMeta = getStatusLabel(t, inv.status);
                   return (
                     <tr key={inv.id} className="hover:bg-secondary/30 transition-colors">
                       <td className="px-6 py-4 font-medium">{inv.client}</td>
@@ -435,6 +475,56 @@ export function OverviewTab() {
           </table>
         </div>
       </Card>
+
+      <Dialog open={planOpen} onOpenChange={setPlanOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="w-4 h-4 text-[#0052FC]" />
+              {t("dashboard.overview.planDialogTitle")}
+            </DialogTitle>
+          </DialogHeader>
+          {planLoading ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3 text-muted-foreground">
+              <Loader2 className="w-6 h-6 animate-spin text-[#0052FC]" />
+              <span className="text-sm">{t("dashboard.overview.planAnalyzing")}</span>
+            </div>
+          ) : planResult ? (
+            <div className="space-y-4 overflow-y-auto max-h-[60vh] pe-1">
+              <div className="rounded-lg bg-secondary/40 p-4 space-y-1.5">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("dashboard.overview.planRiskAnalysis")}</h4>
+                <p className="text-sm leading-relaxed">{planResult.riskAnalysis}</p>
+              </div>
+              {planResult.recommendations.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">{t("dashboard.overview.planRecommendations")}</h4>
+                  <ul className="space-y-2">
+                    {planResult.recommendations.map((rec, i) => (
+                      <li key={i} className="flex gap-2 text-sm bg-secondary/30 rounded-lg p-3">
+                        <span className="text-[#0052FC] font-bold shrink-0 mt-0.5">•</span>
+                        <span>{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {planResult.optimizationOpportunities.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">{t("dashboard.overview.planOpportunities")}</h4>
+                  <ul className="space-y-2">
+                    {planResult.optimizationOpportunities.map((opp, i) => (
+                      <li key={i} className="flex gap-2 text-sm bg-emerald-500/5 rounded-lg p-3 border border-emerald-500/20">
+                        <span className="text-emerald-500 font-bold shrink-0 mt-0.5">✓</span>
+                        <span>{opp}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -448,10 +538,11 @@ interface KpiCardProps {
   changePct?: number;
   changeLabel?: string;
   margin?: number;
+  marginLabel?: string;
   extraClass?: string;
 }
 
-function KpiCard({ title, value, currency, icon, tone, changePct, changeLabel, margin, extraClass }: KpiCardProps) {
+function KpiCard({ title, value, currency, icon, tone, changePct, changeLabel, margin, marginLabel, extraClass }: KpiCardProps) {
   const toneRing =
     tone === "positive"
       ? "bg-emerald-500/10 text-emerald-500"
@@ -475,11 +566,11 @@ function KpiCard({ title, value, currency, icon, tone, changePct, changeLabel, m
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold tracking-tight">
-          {formatAmount(value)} <span className="text-sm font-medium text-muted-foreground uppercase">{currency}</span>
+          {value.toLocaleString("en-US")} <span className="text-sm font-medium text-muted-foreground uppercase">{currency}</span>
         </div>
         <div className={`mt-3 flex items-center gap-1.5 text-xs font-medium w-fit px-2 py-1 rounded-[6px] ${toneBadge}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-          {margin !== undefined ? `هامش الربح: ${margin}%` : `${(changePct ?? 0) > 0 ? "+" : ""}${changePct}% ${changeLabel ?? ""}`}
+          {margin !== undefined ? `${marginLabel}: ${margin}%` : `${(changePct ?? 0) > 0 ? "+" : ""}${changePct}% ${changeLabel ?? ""}`}
         </div>
       </CardContent>
     </Card>
