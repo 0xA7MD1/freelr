@@ -18,6 +18,8 @@ import { useFetch } from "@/lib/hooks/use-fetch";
 import { clientsApi } from "@/lib/api/clients";
 import { ApiError, isApiConfigured } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useT } from "@/lib/i18n";
+import { ConfirmDeleteDialog } from "@/components/shared/ui/confirm-delete-dialog";
 import { MOCK_CLIENTS } from "@/lib/api/mocks";
 import type { Client } from "@/lib/api/types";
 
@@ -50,6 +52,7 @@ const textareaClass =
 
 export function ClientsTab() {
   const { businessId, user } = useAuth();
+  const t = useT();
   const apiOn = isApiConfigured() && !!businessId;
 
   const { data, setData, isLoading } = useFetch<Client[]>(
@@ -66,7 +69,7 @@ export function ClientsTab() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
 
   const field =
     (key: keyof typeof EMPTY_FORM) =>
@@ -107,7 +110,6 @@ export function ClientsTab() {
       return;
     }
 
-    // Use getById to ensure we have the latest data before editing
     setLoadingEdit(true);
     setEditingId(client.id);
     try {
@@ -124,7 +126,7 @@ export function ClientsTab() {
       setMode("edit");
       setFormOpen(true);
     } catch {
-      toast.error("تعذر تحميل بيانات العميل.");
+      toast.error(t("clientsPage.loadError"));
       setEditingId(null);
     } finally {
       setLoadingEdit(false);
@@ -134,11 +136,11 @@ export function ClientsTab() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.firstName.trim()) {
-      toast.error("الاسم الأول مطلوب.");
+      toast.error(t("clientsPage.firstNameRequired"));
       return;
     }
     if (!form.email.trim()) {
-      toast.error("البريد الإلكتروني مطلوب.");
+      toast.error(t("clientsPage.emailRequired"));
       return;
     }
 
@@ -157,10 +159,7 @@ export function ClientsTab() {
 
         const optimistic: Client = {
           id: `local-${Date.now()}`,
-          fullName: [form.firstName, form.lastName]
-            .filter(Boolean)
-            .join(" ")
-            .trim(),
+          fullName: [form.firstName, form.lastName].filter(Boolean).join(" ").trim(),
           ...payload,
         };
 
@@ -170,11 +169,10 @@ export function ClientsTab() {
         }
 
         setData((prev) => [optimistic, ...(prev ?? [])]);
-        toast.success("تم إضافة العميل بنجاح.");
+        toast.success(t("clientsPage.addSuccess"));
         resetForm();
         setFormOpen(false);
       } else {
-        // Edit mode
         const payload = {
           businessId: businessId!,
           firstName: form.firstName.trim(),
@@ -191,45 +189,37 @@ export function ClientsTab() {
           await clientsApi.update(editingId!, payload);
         }
 
-        const updatedName = [form.firstName, form.lastName]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
+        const updatedName = [form.firstName, form.lastName].filter(Boolean).join(" ").trim();
 
         setData((prev) =>
           (prev ?? []).map((c) =>
-            c.id === editingId
-              ? { ...c, ...payload, fullName: updatedName }
-              : c,
+            c.id === editingId ? { ...c, ...payload, fullName: updatedName } : c,
           ),
         );
-        toast.success("تم تحديث بيانات العميل.");
+        toast.success(t("clientsPage.updateSuccess"));
         resetForm();
         setFormOpen(false);
       }
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "حدث خطأ. حاول مرة أخرى.",
-      );
+      toast.error(err instanceof ApiError ? err.message : t("clientsPage.error"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteConfirm = async (client: Client) => {
-    setDeletingId(client.id);
-    setConfirmDeleteId(null);
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
     try {
       if (apiOn) {
-        await clientsApi.delete(client.id, businessId!, user?.id ?? "");
+        await clientsApi.delete(deleteTarget.id, businessId!, user?.id ?? "");
       }
-      setData((prev) => (prev ?? []).filter((c) => c.id !== client.id));
-      if (editingId === client.id) resetForm();
-      toast.success(`تم حذف العميل "${client.fullName}".`);
+      setData((prev) => (prev ?? []).filter((c) => c.id !== deleteTarget.id));
+      if (editingId === deleteTarget.id) resetForm();
+      toast.success(t("clientsPage.deleteSuccess", { name: deleteTarget.fullName }));
+      setDeleteTarget(null);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "تعذر حذف العميل.",
-      );
+      toast.error(err instanceof ApiError ? err.message : t("clientsPage.deleteError"));
     } finally {
       setDeletingId(null);
     }
@@ -237,144 +227,148 @@ export function ClientsTab() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* ── Form Panel ─────────────────────────────────────────────────────── */}
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        loading={!!deletingId}
+      />
+      {/* ── Form Dialog ─────────────────────────────────────────────────────── */}
       <Dialog open={formOpen} onOpenChange={(open) => { if (!open) closeForm(); else setFormOpen(true); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-          <div className="pe-8">
+            <div className="pe-8">
               <DialogTitle className="text-[clamp(1.125rem,3vw,1.5rem)]">
-                {mode === "add" ? "إضافة عميل جديد" : "تعديل بيانات العميل"}
+                {mode === "add" ? t("clientsPage.form.addTitle") : t("clientsPage.form.editTitle")}
               </DialogTitle>
               <DialogDescription className="text-[clamp(0.8125rem,2vw,0.875rem)] mt-1">
-                {mode === "add"
-                  ? "أدخل معلومات العميل لإضافته إلى قائمتك."
-                  : "عدّل المعلومات ثم احفظ التغييرات."}
+                {mode === "add" ? t("clientsPage.form.addDesc") : t("clientsPage.form.editDesc")}
               </DialogDescription>
-          </div>
+            </div>
           </DialogHeader>
 
           <div>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
+                    {t("clientsPage.form.firstName")} <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    placeholder={t("clientsPage.form.firstNamePlaceholder")}
+                    value={form.firstName}
+                    onChange={field("firstName")}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
+                    {t("clientsPage.form.lastName")}
+                  </Label>
+                  <Input
+                    placeholder={t("clientsPage.form.lastNamePlaceholder")}
+                    value={form.lastName}
+                    onChange={field("lastName")}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                  الاسم الأول <span className="text-destructive">*</span>
+                  {t("clientsPage.form.email")} <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  placeholder="محمد"
-                  value={form.firstName}
-                  onChange={field("firstName")}
+                  type="email"
+                  dir="ltr"
+                  placeholder="client@example.com"
+                  value={form.email}
+                  onChange={field("email")}
                   className={inputClass}
                 />
               </div>
+
               <div className="space-y-2">
                 <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                  الاسم الأخير
+                  {t("clientsPage.form.phone")}
                 </Label>
                 <Input
-                  placeholder="الأحمدي"
-                  value={form.lastName}
-                  onChange={field("lastName")}
+                  type="tel"
+                  dir="ltr"
+                  placeholder="+966 5x xxx xxxx"
+                  value={form.phone}
+                  onChange={field("phone")}
                   className={inputClass}
                 />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                البريد الإلكتروني <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="email"
-                dir="ltr"
-                placeholder="client@example.com"
-                value={form.email}
-                onChange={field("email")}
-                className={inputClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                رقم الهاتف
-              </Label>
-              <Input
-                type="tel"
-                dir="ltr"
-                placeholder="+966 5x xxx xxxx"
-                value={form.phone}
-                onChange={field("phone")}
-                className={inputClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                الشركة / المؤسسة
-              </Label>
-              <Input
-                placeholder="اسم الشركة"
-                value={form.company}
-                onChange={field("company")}
-                className={inputClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                العنوان
-              </Label>
-              <Input
-                placeholder="المدينة، الدولة"
-                value={form.address}
-                onChange={field("address")}
-                className={inputClass}
-              />
-            </div>
-
-            {mode === "edit" && (
               <div className="space-y-2">
                 <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
-                  ملاحظات
+                  {t("clientsPage.form.company")}
                 </Label>
-                <textarea
-                  placeholder="ملاحظات إضافية عن العميل..."
-                  value={form.notes}
-                  onChange={field("notes")}
-                  className={textareaClass}
+                <Input
+                  placeholder={t("clientsPage.form.companyPlaceholder")}
+                  value={form.company}
+                  onChange={field("company")}
+                  className={inputClass}
                 />
               </div>
-            )}
 
-            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={closeForm}
-                disabled={submitting || loadingEdit}
-              >
-                إلغاء
-              </Button>
-              <Button
-                type="submit"
-                disabled={submitting || loadingEdit}
-                className="gap-2 font-bold"
-              >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : mode === "add" ? (
-                  <Plus className="w-4 h-4" />
-                ) : (
-                  <Pencil className="w-4 h-4" />
-                )}
-                {submitting
-                  ? "جاري الحفظ..."
-                  : mode === "add"
-                    ? "إضافة العميل"
-                    : "حفظ التغييرات"}
-              </Button>
-            </div>
-          </form>
+              <div className="space-y-2">
+                <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
+                  {t("clientsPage.form.address")}
+                </Label>
+                <Input
+                  placeholder={t("clientsPage.form.addressPlaceholder")}
+                  value={form.address}
+                  onChange={field("address")}
+                  className={inputClass}
+                />
+              </div>
+
+              {mode === "edit" && (
+                <div className="space-y-2">
+                  <Label className="text-[clamp(0.8125rem,2vw,0.875rem)]">
+                    {t("clientsPage.form.notes")}
+                  </Label>
+                  <textarea
+                    placeholder={t("clientsPage.form.notesPlaceholder")}
+                    value={form.notes}
+                    onChange={field("notes")}
+                    className={textareaClass}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeForm}
+                  disabled={submitting || loadingEdit}
+                >
+                  {t("clientsPage.form.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submitting || loadingEdit}
+                  className="gap-2 font-bold"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : mode === "add" ? (
+                    <Plus className="w-4 h-4" />
+                  ) : (
+                    <Pencil className="w-4 h-4" />
+                  )}
+                  {submitting
+                    ? t("clientsPage.form.saving")
+                    : mode === "add"
+                      ? t("clientsPage.form.submit")
+                      : t("clientsPage.form.save")}
+                </Button>
+              </div>
+            </form>
           </div>
         </DialogContent>
       </Dialog>
@@ -383,22 +377,16 @@ export function ClientsTab() {
       <Card className="shadow-sm border-border overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b border-border bg-card flex justify-between items-center shrink-0">
           <h4 className="font-bold text-[clamp(0.875rem,2.5vw,1rem)]">
-            قائمة العملاء
+            {t("clientsPage.listTitle")}
           </h4>
           <div className="flex items-center gap-2">
-            {isLoading && (
-              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            )}
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
             <span className="text-xs text-muted-foreground bg-secondary/60 px-2.5 py-0.5 rounded-full font-medium">
-              {clients.length} عميل
+              {clients.length} {t("clientsPage.countSuffix")}
             </span>
-            <Button
-              size="sm"
-              onClick={openCreateForm}
-              className="h-9 gap-1.5 font-bold"
-            >
+            <Button size="sm" onClick={openCreateForm} className="h-9 gap-1.5 font-bold">
               <Plus className="w-4 h-4" />
-              عميل جديد
+              {t("clientsPage.addNew")}
             </Button>
           </div>
         </div>
@@ -406,10 +394,10 @@ export function ClientsTab() {
         {clients.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
             <UserRound className="w-10 h-10 opacity-30" />
-            <p className="text-sm">لم يتم إضافة عملاء بعد</p>
+            <p className="text-sm">{t("clientsPage.noClients")}</p>
             <Button onClick={openCreateForm} size="sm" className="mt-2 gap-1.5">
               <Plus className="w-4 h-4" />
-              إضافة أول عميل
+              {t("clientsPage.addFirst")}
             </Button>
           </div>
         ) : (
@@ -417,122 +405,74 @@ export function ClientsTab() {
             <table className="w-full text-right text-[clamp(0.8125rem,2vw,0.875rem)] min-w-[max(680px,100%)]">
               <thead className="bg-secondary/50 text-muted-foreground text-[clamp(0.75rem,1.5vw,0.875rem)]">
                 <tr className="border-b border-border">
-                  <th className="px-6 py-3 font-medium">العميل</th>
-                  <th className="px-6 py-3 font-medium">البريد الإلكتروني</th>
-                  <th className="px-6 py-3 font-medium">الشركة</th>
-                  <th className="px-6 py-3 font-medium">الهاتف</th>
-                  <th className="px-6 py-3 font-medium text-center">إجراءات</th>
+                  <th className="px-6 py-3 font-medium">{t("clientsPage.table.client")}</th>
+                  <th className="px-6 py-3 font-medium">{t("clientsPage.table.email")}</th>
+                  <th className="px-6 py-3 font-medium">{t("clientsPage.table.company")}</th>
+                  <th className="px-6 py-3 font-medium">{t("clientsPage.table.phone")}</th>
+                  <th className="px-6 py-3 font-medium text-center">{t("clientsPage.table.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {clients.map((client) => {
                   const isDeleting = deletingId === client.id;
                   const isEditing = editingId === client.id;
-                  const awaitingConfirm = confirmDeleteId === client.id;
 
                   return (
                     <tr
                       key={client.id}
-                      className={`transition-colors ${
-                        isEditing
-                          ? "bg-primary/5"
-                          : "hover:bg-secondary/30"
-                      }`}
+                      className={`transition-colors ${isEditing ? "bg-primary/5" : "hover:bg-secondary/30"}`}
                     >
-                      {/* Name + avatar */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 select-none">
                             {initials(client.fullName)}
                           </div>
                           <div>
-                            <p className="font-medium leading-tight">
-                              {client.fullName}
-                            </p>
+                            <p className="font-medium leading-tight">{client.fullName}</p>
                             {client.address && (
-                              <p className="text-[0.7rem] text-muted-foreground mt-0.5">
-                                {client.address}
-                              </p>
+                              <p className="text-[0.7rem] text-muted-foreground mt-0.5">{client.address}</p>
                             )}
                           </div>
                         </div>
                       </td>
 
-                      {/* Email — LTR */}
-                      <td
-                        className="px-6 py-4 text-muted-foreground"
-                        dir="ltr"
-                      >
+                      <td className="px-6 py-4 text-muted-foreground" dir="ltr">
                         <span className="text-right block">{client.email}</span>
                       </td>
 
-                      {/* Company */}
                       <td className="px-6 py-4 text-muted-foreground">
                         {client.company ?? "—"}
                       </td>
 
-                      {/* Phone — LTR */}
-                      <td
-                        className="px-6 py-4 text-muted-foreground font-mono text-[clamp(0.75rem,1.5vw,0.8125rem)]"
-                        dir="ltr"
-                      >
+                      <td className="px-6 py-4 text-muted-foreground font-mono text-[clamp(0.75rem,1.5vw,0.8125rem)]" dir="ltr">
                         {client.phone ?? "—"}
                       </td>
 
-                      {/* Actions */}
                       <td className="px-6 py-4">
-                        {awaitingConfirm ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="h-7 px-2.5 text-xs font-bold"
-                              onClick={() => handleDeleteConfirm(client)}
-                              disabled={isDeleting}
-                            >
-                              {isDeleting ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                "تأكيد"
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => setConfirmDeleteId(null)}
-                            >
-                              إلغاء
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                              onClick={() => handleEdit(client)}
-                              disabled={loadingEdit || !!deletingId}
-                              aria-label="تعديل"
-                            >
-                              {loadingEdit && isEditing ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Pencil className="w-3.5 h-3.5" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => setConfirmDeleteId(client.id)}
-                              disabled={isDeleting || submitting}
-                              aria-label="حذف"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                            onClick={() => handleEdit(client)}
+                            disabled={loadingEdit || !!deletingId}
+                          >
+                            {loadingEdit && isEditing
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Pencil className="w-3.5 h-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(client)}
+                            disabled={isDeleting || submitting}
+                          >
+                            {isDeleting
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Trash2 className="w-3.5 h-3.5" />}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );

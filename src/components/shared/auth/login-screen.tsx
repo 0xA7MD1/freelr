@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
+import { LanguageSwitcher } from "@/components/shared/ui/language-switcher";
+import { useT } from "@/lib/i18n";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -33,6 +35,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const { login, register, forgotPassword } = useAuth();
+  const t = useT();
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
@@ -44,6 +47,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
           <div className="flex items-center gap-3 font-semibold text-[#0052FC]">
             <span className="text-3xl font-bold tracking-tight font-sans">Freelr</span>
           </div>
+          <LanguageSwitcher />
         </div>
 
         <div className="relative w-full rounded-[24px] border border-[#E6E6E6] bg-white p-8 shadow-sm">
@@ -57,7 +61,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
                   toast.error(
                     err instanceof ApiError
                       ? err.message
-                      : "تعذر تسجيل الدخول. تحقق من بياناتك وحاول مجدداً.",
+                      : t("auth.login.errorMessage"),
                   );
                 }
               }}
@@ -78,7 +82,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
                   toast.error(
                     err instanceof ApiError
                       ? err.message
-                      : "تعذر إنشاء الحساب. حاول مرة أخرى.",
+                      : t("auth.register.errorMessage"),
                   );
                 }
               }}
@@ -98,7 +102,7 @@ export function LoginScreen({ onLogin, initialMode = "login" }: LoginScreenProps
                   toast.error(
                     err instanceof ApiError
                       ? err.message
-                      : "حدث خطأ أثناء إرسال الرابط. حاول مرة أخرى.",
+                      : t("auth.forgotPassword.errorMessage"),
                   );
                 }
               }}
@@ -122,6 +126,7 @@ interface LoginFormProps {
 }
 
 function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setShowPassword }: LoginFormProps) {
+  const t = useT();
   const {
     register,
     handleSubmit,
@@ -134,15 +139,15 @@ function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setSh
   return (
     <>
       <div className="mb-8 flex flex-col items-center gap-1">
-        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">مرحباً بعودتك!</h2>
-        <p className="text-center text-[14px] font-normal leading-[20px] text-[#606060]">أدخل بياناتك للبدء</p>
+        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">{t("auth.login.title")}</h2>
+        <p className="text-center text-[14px] font-normal leading-[20px] text-[#606060]">{t("auth.login.subtitle")}</p>
       </div>
       <form className="flex flex-col gap-5" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">البريد الإلكتروني</label>
+          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.login.emailLabel")}</label>
           <input
             className={fieldClass}
-            placeholder="البريد الإلكتروني"
+            placeholder={t("auth.login.emailPlaceholder")}
             type="email"
             autoComplete="email"
             {...register("email")}
@@ -151,9 +156,9 @@ function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setSh
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">كلمة المرور</label>
+            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.login.passwordLabel")}</label>
             <button type="button" onClick={onForgot} className="text-[12px] font-semibold text-[#0052FC]">
-              نسيت كلمة المرور؟
+              {t("auth.login.forgotPassword")}
             </button>
           </div>
           <div className="relative">
@@ -168,7 +173,7 @@ function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setSh
               type="button"
               className="absolute end-3 top-1/2 -translate-y-1/2 text-[#606060]"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              aria-label={showPassword ? t("auth.login.hidePassword") : t("auth.login.showPassword")}
             >
               {showPassword ? <EyeOff className="h-[16px] w-[16px]" /> : <Eye className="h-[16px] w-[16px]" />}
             </button>
@@ -177,20 +182,20 @@ function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setSh
         </div>
         <label className="flex items-center gap-2 text-[13px] text-[#606060] cursor-pointer select-none">
           <input type="checkbox" className="accent-[#0052FC]" {...register("remember")} />
-          تذكرني على هذا الجهاز
+          {t("auth.login.rememberMe")}
         </label>
         <button
           className="inline-flex items-center justify-center px-4 py-2 transition mt-2 h-[51px] w-full rounded-[14px] bg-[#121212] text-[16px] font-semibold text-white hover:bg-[#121212]/90 disabled:opacity-50"
           type="submit"
           disabled={isSubmitting}
         >
-          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "تسجيل الدخول"}
+          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : t("auth.login.submitButton")}
         </button>
         <div className="mt-2 border-t border-[#3C4A42]/10 pt-6">
           <p className="flex justify-center gap-1 text-[14px] text-[#606060]">
-            جديد على المنصة؟{" "}
+            {t("auth.login.noAccount")}{" "}
             <button type="button" onClick={onSwitchToRegister} className="font-semibold text-[#0052FC]">
-              إنشاء حساب
+              {t("auth.login.createAccount")}
             </button>
           </p>
         </div>
@@ -207,6 +212,7 @@ interface RegisterFormProps {
 }
 
 function RegisterForm({ onSubmit, onSwitchToLogin, showPassword, setShowPassword }: RegisterFormProps) {
+  const t = useT();
   const {
     register,
     handleSubmit,
@@ -219,27 +225,27 @@ function RegisterForm({ onSubmit, onSwitchToLogin, showPassword, setShowPassword
   return (
     <>
       <div className="mb-8 flex flex-col items-center gap-1">
-        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">إنشاء حساب جديد</h2>
-        <p className="text-center text-[14px] font-normal leading-[20px] text-[#606060]">أدخل بياناتك للبدء</p>
+        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">{t("auth.register.title")}</h2>
+        <p className="text-center text-[14px] font-normal leading-[20px] text-[#606060]">{t("auth.register.subtitle")}</p>
       </div>
       <form className="flex flex-col gap-5" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">الاسم الأول</label>
-            <input className={fieldClass} placeholder="الاسم الأول" autoComplete="given-name" {...register("firstName")} />
+            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.register.firstNameLabel")}</label>
+            <input className={fieldClass} placeholder={t("auth.register.firstNameLabel")} autoComplete="given-name" {...register("firstName")} />
             {errors.firstName && <p className={fieldErrorClass}>{errors.firstName.message}</p>}
           </div>
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">اسم العائلة</label>
-            <input className={fieldClass} placeholder="اسم العائلة" autoComplete="family-name" {...register("lastName")} />
+            <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.register.lastNameLabel")}</label>
+            <input className={fieldClass} placeholder={t("auth.register.lastNameLabel")} autoComplete="family-name" {...register("lastName")} />
             {errors.lastName && <p className={fieldErrorClass}>{errors.lastName.message}</p>}
           </div>
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">رقم الهاتف</label>
+          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.register.phoneLabel")}</label>
           <input
             className={fieldClass}
-            placeholder="رقم الهاتف"
+            placeholder={t("auth.register.phoneLabel")}
             inputMode="tel"
             autoComplete="tel"
             dir="ltr"
@@ -248,12 +254,12 @@ function RegisterForm({ onSubmit, onSwitchToLogin, showPassword, setShowPassword
           {errors.phoneNumber && <p className={fieldErrorClass}>{errors.phoneNumber.message}</p>}
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">البريد الإلكتروني</label>
-          <input className={fieldClass} placeholder="البريد الإلكتروني" type="email" autoComplete="email" {...register("email")} />
+          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.register.emailLabel")}</label>
+          <input className={fieldClass} placeholder={t("auth.register.emailLabel")} type="email" autoComplete="email" {...register("email")} />
           {errors.email && <p className={fieldErrorClass}>{errors.email.message}</p>}
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">كلمة المرور</label>
+          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.register.passwordLabel")}</label>
           <div className="relative">
             <input
               className="w-full rounded-md border px-3 py-2 outline-none ring-slate-200 focus:ring h-[44px] border-dashed border-[#E6E6E6] bg-transparent ps-4 pe-10 text-sm text-black"
@@ -266,7 +272,7 @@ function RegisterForm({ onSubmit, onSwitchToLogin, showPassword, setShowPassword
               type="button"
               className="absolute end-3 top-1/2 -translate-y-1/2 text-[#606060]"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              aria-label={showPassword ? t("auth.login.hidePassword") : t("auth.login.showPassword")}
             >
               {showPassword ? <EyeOff className="h-[16px] w-[16px]" /> : <Eye className="h-[16px] w-[16px]" />}
             </button>
@@ -278,13 +284,13 @@ function RegisterForm({ onSubmit, onSwitchToLogin, showPassword, setShowPassword
           type="submit"
           disabled={isSubmitting}
         >
-          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "إنشاء حساب"}
+          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : t("auth.register.submitButton")}
         </button>
         <div className="mt-2 border-t border-[#3C4A42]/10 pt-6">
           <p className="flex justify-center gap-1 text-[14px] text-[#606060]">
-            تسجيل الدخول؟{" "}
+            {t("auth.register.hasAccount")}{" "}
             <button type="button" onClick={onSwitchToLogin} className="font-semibold text-[#0052FC]">
-              تسجيل الدخول
+              {t("auth.register.loginLink")}
             </button>
           </p>
         </div>
@@ -299,6 +305,7 @@ interface ForgotFormProps {
 }
 
 function ForgotForm({ onSubmit, onBack }: ForgotFormProps) {
+  const t = useT();
   const {
     register,
     handleSubmit,
@@ -311,15 +318,15 @@ function ForgotForm({ onSubmit, onBack }: ForgotFormProps) {
   return (
     <>
       <div className="mb-8 flex flex-col items-center gap-1">
-        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">نسيت كلمة المرور</h2>
+        <h2 className="text-[24px] font-bold leading-[32px] text-black/90">{t("auth.forgotPassword.title")}</h2>
         <p className="text-center text-[14px] font-normal leading-[20px] text-[#606060]">
-          أدخل بريدك الإلكتروني لتلقي رابط إعادة التعيين
+          {t("auth.forgotPassword.subtitle")}
         </p>
       </div>
       <form className="flex flex-col gap-5" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">البريد الإلكتروني</label>
-          <input className={fieldClass} placeholder="البريد الإلكتروني" type="email" autoComplete="email" {...register("email")} />
+          <label className="text-[10px] font-medium uppercase tracking-[1px] text-[#606060]">{t("auth.forgotPassword.emailLabel")}</label>
+          <input className={fieldClass} placeholder={t("auth.forgotPassword.emailLabel")} type="email" autoComplete="email" {...register("email")} />
           {errors.email && <p className={fieldErrorClass}>{errors.email.message}</p>}
         </div>
         <button
@@ -327,12 +334,12 @@ function ForgotForm({ onSubmit, onBack }: ForgotFormProps) {
           type="submit"
           disabled={isSubmitting}
         >
-          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "إرسال رابط إعادة التعيين"}
+          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : t("auth.forgotPassword.submitButton")}
         </button>
         <div className="mt-2 border-t border-[#3C4A42]/10 pt-6">
           <div className="flex justify-center text-center">
             <button type="button" onClick={onBack} className="font-semibold text-[14px] text-[#0052FC]">
-              العودة لتسجيل الدخول
+              {t("auth.forgotPassword.backToLogin")}
             </button>
           </div>
         </div>
@@ -342,6 +349,8 @@ function ForgotForm({ onSubmit, onBack }: ForgotFormProps) {
 }
 
 function ForgotSuccess({ onBack }: { onBack: () => void }) {
+  const t = useT();
+
   return (
     <div className="flex flex-col items-center gap-4 py-4">
       <div className="w-12 h-12 rounded-full border-2 border-green-500 flex items-center justify-center text-green-500 mb-2">
@@ -350,14 +359,11 @@ function ForgotSuccess({ onBack }: { onBack: () => void }) {
         </svg>
       </div>
       <p className="text-[14px] font-medium text-center text-green-600">
-        تم إرسال تعليمات إعادة التعيين إلى بريدك الإلكتروني بنجاح!
+        {t("auth.forgotPassword.successMessage")}
       </p>
       <button type="button" onClick={onBack} className="mt-4 font-semibold text-[14px] text-[#0052FC]">
-        العودة إلى تسجيل الدخول
+        {t("auth.forgotPassword.backToLoginSuccess")}
       </button>
     </div>
   );
 }
-
-
-

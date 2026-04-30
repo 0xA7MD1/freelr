@@ -312,13 +312,13 @@ export interface DashboardOverview {
 
 export interface DashboardChartPoint {
   month: string;
-  year: number;
-  total: number;
+  amount: number;
 }
 
 export interface DashboardCategoryPoint {
   category: string;
-  total: number;
+  amount: number;
+  percentage?: number;
 }
 
 export interface DashboardChartsData {

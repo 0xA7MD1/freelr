@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { arSA } from "date-fns/locale";
+import { arSA, enUS } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
 import { Input } from "@/components/shared/ui/input";
 import { Label } from "@/components/shared/ui/label";
@@ -39,8 +39,10 @@ import {
 import { toast } from "sonner";
 import { useFetch } from "@/lib/hooks/use-fetch";
 import { expensesApi } from "@/lib/api/expenses";
-import { ApiError, isApiConfigured } from "@/lib/api/client";
+import { ApiError, API_BASE_URL, isApiConfigured } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useT, useLanguage } from "@/lib/i18n";
+import { ConfirmDeleteDialog } from "@/components/shared/ui/confirm-delete-dialog";
 import { MOCK_EXPENSES } from "@/lib/api/mocks";
 import type { Expense, ExpenseCategory } from "@/lib/api/types";
 
@@ -61,9 +63,16 @@ const MOCK_CATEGORIES = [
   { id: "أخرى",    name: "أخرى",    icon: ShoppingBag, color: COLOR_CYCLE[4] },
 ];
 
-function safeFormatDate(value: string) {
-  try { return format(parseISO(value), "dd MMM yyyy", { locale: arSA }); }
-  catch { return value; }
+function withBaseUrl(url: string): string {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
+  return `${API_BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
+function safeFormatDate(value: string, locale: string) {
+  try {
+    return format(parseISO(value), "dd MMM yyyy", { locale: locale === "ar" ? arSA : enUS });
+  } catch { return value; }
 }
 
 // ─── ExpenseFormModal ────────────────────────────────────────────────────────
@@ -75,7 +84,6 @@ interface ExpenseFormModalProps {
   businessId: string;
   userId: string;
   currency: string;
-  /** Prefilled expense for edit mode; undefined = create mode */
   editing?: Expense;
   onSaved: (expense: Expense, isNew: boolean) => void;
 }
@@ -83,15 +91,16 @@ interface ExpenseFormModalProps {
 function ExpenseFormModal({
   open, onOpenChange, categories, businessId, userId, currency, editing, onSaved,
 }: ExpenseFormModalProps) {
+  const t = useT();
   const isEdit = !!editing;
 
-  const [amount, setAmount]     = useState(editing ? String(editing.amount) : "");
-  const [catId,  setCatId]      = useState(editing?.categoryId ?? "");
-  const [desc,   setDesc]       = useState(editing?.description ?? "");
-  const [vendor, setVendor]     = useState(editing?.vendor ?? "");
-  const [notes,  setNotes]      = useState(editing?.notes ?? "");
+  const [amount,    setAmount]    = useState(editing ? String(editing.amount) : "");
+  const [catId,     setCatId]     = useState(editing?.categoryId ?? "");
+  const [desc,      setDesc]      = useState(editing?.description ?? "");
+  const [vendor,    setVendor]    = useState(editing?.vendor ?? "");
+  const [notes,     setNotes]     = useState(editing?.notes ?? "");
   const [recurring, setRecurring] = useState(editing?.isRecurring ?? false);
-  const [date,   setDate]       = useState(
+  const [date,      setDate]      = useState(
     editing?.expenseDate ? editing.expenseDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
   );
   const [busy, setBusy] = useState(false);
@@ -106,8 +115,8 @@ function ExpenseFormModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(amount);
-    if (!Number.isFinite(num) || num <= 0) { toast.error("يرجى إدخال مبلغ صالح أكبر من صفر."); return; }
-    if (!catId || !desc.trim()) { toast.error("يرجى تعبئة الحقول المطلوبة."); return; }
+    if (!Number.isFinite(num) || num <= 0) { toast.error(t("expensesPage.form.amountError")); return; }
+    if (!catId || !desc.trim())            { toast.error(t("expensesPage.form.fieldsError")); return; }
 
     setBusy(true);
     const payload = {
@@ -125,7 +134,7 @@ function ExpenseFormModal({
       if (isEdit && editing) {
         await expensesApi.update(editing.id, { ...payload, updatedBy: userId });
         onSaved({ ...editing, ...payload, category: categories.find(c => c.id === catId)?.name ?? catId }, false);
-        toast.success("تم تحديث المصروف بنجاح");
+        toast.success(t("expensesPage.updateSuccess"));
       } else {
         const res = await expensesApi.create(payload);
         const catName = categories.find(c => c.id === catId)?.name ?? catId;
@@ -141,11 +150,11 @@ function ExpenseFormModal({
           notes: notes.trim() || undefined,
           isRecurring: recurring,
         }, true);
-        toast.success("تم تسجيل المصروف بنجاح");
+        toast.success(t("expensesPage.addSuccess"));
       }
       handleClose();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "حدث خطأ. حاول مرة أخرى.");
+      toast.error(err instanceof ApiError ? err.message : t("expensesPage.error"));
     } finally {
       setBusy(false);
     }
@@ -155,12 +164,12 @@ function ExpenseFormModal({
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "تعديل المصروف" : "تسجيل مصروف جديد"}</DialogTitle>
+          <DialogTitle>{isEdit ? t("expensesPage.form.editTitle") : t("expensesPage.form.addTitle")}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>المبلغ ({currency})</Label>
+              <Label>{t("expensesPage.form.amount")} ({currency})</Label>
               <Input
                 type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00"
                 value={amount} onChange={e => setAmount(e.target.value)}
@@ -168,7 +177,7 @@ function ExpenseFormModal({
               />
             </div>
             <div className="space-y-2">
-              <Label>التاريخ</Label>
+              <Label>{t("expensesPage.form.date")}</Label>
               <Input
                 type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="bg-secondary/50 border-transparent focus-visible:ring-primary"
@@ -177,10 +186,15 @@ function ExpenseFormModal({
           </div>
 
           <div className="space-y-2">
-            <Label>التصنيف <span className="text-destructive">*</span></Label>
+            <Label>{t("expensesPage.form.category")} <span className="text-destructive">*</span></Label>
             <Select value={catId} onValueChange={v => setCatId(v ?? "")}>
               <SelectTrigger dir="rtl" className="bg-secondary/50 border-transparent focus:ring-primary">
-                <SelectValue placeholder="اختر التصنيف..." />
+                <span className="flex-1 text-start text-sm truncate" data-slot="select-value">
+                  {catId
+                    ? (categories.find(c => c.id === catId)?.name ?? catId)
+                    : <span className="text-muted-foreground">{t("expensesPage.form.categoryPlaceholder")}</span>
+                  }
+                </span>
               </SelectTrigger>
               <SelectContent dir="rtl">
                 {categories.map(c => (
@@ -191,27 +205,27 @@ function ExpenseFormModal({
           </div>
 
           <div className="space-y-2">
-            <Label>الوصف <span className="text-destructive">*</span></Label>
+            <Label>{t("expensesPage.form.description")} <span className="text-destructive">*</span></Label>
             <Input
-              placeholder="ما الذي قمت بشرائه؟"
+              placeholder={t("expensesPage.form.descriptionPlaceholder")}
               value={desc} onChange={e => setDesc(e.target.value)}
               className="bg-secondary/50 border-transparent focus-visible:ring-primary"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>المورد / الجهة</Label>
+            <Label>{t("expensesPage.form.vendor")}</Label>
             <Input
-              placeholder="اسم المورد (اختياري)"
+              placeholder={t("expensesPage.form.vendorPlaceholder")}
               value={vendor} onChange={e => setVendor(e.target.value)}
               className="bg-secondary/50 border-transparent focus-visible:ring-primary"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>ملاحظات</Label>
+            <Label>{t("expensesPage.form.notes")}</Label>
             <Input
-              placeholder="ملاحظات إضافية (اختياري)"
+              placeholder={t("expensesPage.form.notesPlaceholder")}
               value={notes} onChange={e => setNotes(e.target.value)}
               className="bg-secondary/50 border-transparent focus-visible:ring-primary"
             />
@@ -223,17 +237,99 @@ function ExpenseFormModal({
               onChange={e => setRecurring(e.target.checked)}
               className="accent-primary w-4 h-4 rounded"
             />
-            مصروف متكرر شهرياً
+            {t("expensesPage.form.isRecurring")}
           </label>
 
           <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>إلغاء</Button>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
+              {t("expensesPage.form.cancel")}
+            </Button>
             <Button type="submit" disabled={busy} className="gap-2">
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : isEdit ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {busy ? "جاري الحفظ..." : isEdit ? "حفظ التعديلات" : "إضافة المصروف"}
+              {busy
+                ? t("expensesPage.form.saving")
+                : isEdit
+                  ? t("expensesPage.form.save")
+                  : t("expensesPage.form.submit")}
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── ReceiptViewerModal ──────────────────────────────────────────────────────
+
+interface ReceiptViewerModalProps {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  expense: Expense | null;
+  onReplace: () => void;
+}
+
+function ReceiptViewerModal({ open, onOpenChange, expense, onReplace }: ReceiptViewerModalProps) {
+  const t = useT();
+  if (!expense?.receiptUrl) return null;
+
+  const url = withBaseUrl(expense.receiptUrl);
+  const isPdf = url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+        <DialogHeader className="px-6 pt-5 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Paperclip className="w-4 h-4 text-primary" />
+            {t("expensesPage.receipt.viewTitle")}
+            {expense.description && (
+              <span className="text-muted-foreground font-normal text-sm">— {expense.description}</span>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-auto px-6 py-5 flex items-center justify-center bg-secondary/20 min-h-[300px]">
+          {isPdf ? (
+            <iframe
+              src={url}
+              className="w-full h-[60vh] rounded-lg border border-border"
+              title="receipt-pdf"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={url}
+              alt="receipt"
+              className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-md"
+            />
+          )}
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex-row justify-between gap-2">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-9 text-xs"
+              onClick={() => window.open(url, "_blank")}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              {t("expensesPage.receipt.openInTab")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-9 text-xs"
+              onClick={() => { onOpenChange(false); onReplace(); }}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              {t("expensesPage.receipt.replace")}
+            </Button>
+          </div>
+          <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => onOpenChange(false)}>
+            {t("expensesPage.receipt.cancel")}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -251,6 +347,7 @@ interface UploadReceiptModalProps {
 }
 
 function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, onUploaded }: UploadReceiptModalProps) {
+  const t = useT();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -272,10 +369,10 @@ function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, o
     try {
       const res = await expensesApi.uploadReceipt(expense.id, businessId, userId, file);
       onUploaded(expense.id, res.receiptUrl);
-      toast.success("تم رفع الإيصال بنجاح");
+      toast.success(t("expensesPage.receipt.uploadSuccess"));
       handleClose();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "فشل رفع الإيصال. حاول مرة أخرى.");
+      toast.error(err instanceof ApiError ? err.message : t("expensesPage.receipt.uploadError"));
     } finally {
       setBusy(false);
     }
@@ -285,12 +382,13 @@ function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, o
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>رفع إيصال</DialogTitle>
+          <DialogTitle>{t("expensesPage.receipt.title")}</DialogTitle>
         </DialogHeader>
         <div className="py-2 space-y-4">
           {expense && (
             <p className="text-sm text-muted-foreground">
-              المصروف: <span className="text-foreground font-medium">{expense.description}</span>
+              {t("expensesPage.receipt.expenseLabel")}{" "}
+              <span className="text-foreground font-medium">{expense.description}</span>
             </p>
           )}
 
@@ -308,7 +406,7 @@ function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, o
           ) : (
             <label className="flex flex-col items-center justify-center gap-3 h-40 rounded-lg border-2 border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-secondary/20 transition-colors">
               <Upload className="w-8 h-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">اضغط لاختيار صورة الإيصال</span>
+              <span className="text-sm text-muted-foreground">{t("expensesPage.receipt.chooseFile")}</span>
               <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
             </label>
           )}
@@ -321,15 +419,17 @@ function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, o
               className="flex items-center gap-1.5 text-xs text-primary hover:underline"
             >
               <ExternalLink className="w-3 h-3" />
-              عرض الإيصال الحالي
+              {t("expensesPage.receipt.viewCurrent")}
             </a>
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={busy}>إلغاء</Button>
+          <Button variant="outline" onClick={handleClose} disabled={busy}>
+            {t("expensesPage.receipt.cancel")}
+          </Button>
           <Button onClick={handleUpload} disabled={!file || busy} className="gap-2">
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {busy ? "جاري الرفع..." : "رفع الإيصال"}
+            {busy ? t("expensesPage.receipt.uploading") : t("expensesPage.receipt.upload")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -341,6 +441,8 @@ function UploadReceiptModal({ open, onOpenChange, expense, businessId, userId, o
 
 export function ExpensesTab() {
   const { businessId, user, currency } = useAuth();
+  const t = useT();
+  const { locale } = useLanguage();
   const userId = user?.id ?? "";
   const curr = currency ?? "AED";
   const apiOn = isApiConfigured() && !!businessId;
@@ -366,20 +468,18 @@ export function ExpensesTab() {
       }))
     : MOCK_CATEGORIES;
 
-  // ── modal state ──
-  const [createOpen,  setCreateOpen]  = useState(false);
-  const [editTarget,  setEditTarget]  = useState<Expense | null>(null);
-  const [receiptTarget, setReceiptTarget] = useState<Expense | null>(null);
+  const [createOpen,      setCreateOpen]      = useState(false);
+  const [editTarget,      setEditTarget]      = useState<Expense | null>(null);
+  const [receiptTarget,   setReceiptTarget]   = useState<Expense | null>(null);
+  const [viewerTarget,    setViewerTarget]    = useState<Expense | null>(null);
   const [deleteId,    setDeleteId]    = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleteBusy,  setDeleteBusy]  = useState(false);
 
-  // ── stats ──
-  const totalSpend   = expenses.reduce((s, e) => s + (e.amount ?? 0), 0);
-  const avgExpense   = expenses.length ? totalSpend / expenses.length : 0;
-  const recurring    = expenses.filter(e => e.isRecurring).length;
+  const totalSpend = expenses.reduce((s, e) => s + (e.amount ?? 0), 0);
+  const avgExpense = expenses.length ? totalSpend / expenses.length : 0;
+  const recurring  = expenses.filter(e => e.isRecurring).length;
 
-  // ── handlers ──
   const handleSaved = (expense: Expense, isNew: boolean) => {
     setData(prev => {
       const list = prev ?? [];
@@ -392,20 +492,13 @@ export function ExpensesTab() {
     setData(prev => (prev ?? []).map(e => e.id === expenseId ? { ...e, receiptUrl: url } : e));
   };
 
-  const handleDeleteClick = (id: string) => {
-    if (deleteConfirmId === id) {
-      handleDeleteConfirm(id);
-    } else {
-      setDeleteConfirmId(id);
-      setTimeout(() => setDeleteConfirmId(prev => prev === id ? null : prev), 3000);
-    }
-  };
-
-  const handleDeleteConfirm = async (id: string) => {
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget;
     if (!apiOn) {
       setData(prev => (prev ?? []).filter(e => e.id !== id));
-      setDeleteConfirmId(null);
-      toast.success("تم حذف المصروف");
+      setDeleteTarget(null);
+      toast.success(t("expensesPage.deleteSuccess"));
       return;
     }
     setDeleteId(id);
@@ -413,10 +506,10 @@ export function ExpensesTab() {
     try {
       await expensesApi.remove(id, businessId!, userId ?? "");
       setData(prev => (prev ?? []).filter(e => e.id !== id));
-      setDeleteConfirmId(null);
-      toast.success("تم حذف المصروف بنجاح");
+      setDeleteTarget(null);
+      toast.success(t("expensesPage.deleteSuccess"));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "فشل حذف المصروف.");
+      toast.error(err instanceof ApiError ? err.message : t("expensesPage.deleteError"));
     } finally {
       setDeleteId(null);
       setDeleteBusy(false);
@@ -425,12 +518,18 @@ export function ExpensesTab() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        loading={deleteBusy}
+      />
 
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">إجمالي المصروفات</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.totalLabel")}</p>
             <p className="text-2xl font-bold font-mono text-destructive dark:text-red-400">
               {totalSpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -439,7 +538,7 @@ export function ExpensesTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">متوسط المصروف</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.avgLabel")}</p>
             <p className="text-2xl font-bold font-mono">
               {avgExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -448,9 +547,12 @@ export function ExpensesTab() {
         </Card>
         <Card className="shadow-sm border-border col-span-2 md:col-span-1">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">مصروفات متكررة</p>
-            <p className="text-2xl font-bold">{recurring}
-              <span className="text-sm font-normal text-muted-foreground ms-1">من {expenses.length}</span>
+            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.recurringLabel")}</p>
+            <p className="text-2xl font-bold">
+              {recurring}
+              <span className="text-sm font-normal text-muted-foreground ms-1">
+                {t("expensesPage.recurringOf", { total: String(expenses.length) })}
+              </span>
             </p>
           </CardContent>
         </Card>
@@ -461,12 +563,12 @@ export function ExpensesTab() {
         <CardHeader className="px-6 py-4 border-b border-border flex-row items-center justify-between space-y-0">
           <div className="flex items-center gap-3">
             <TrendingDown className="w-5 h-5 text-destructive dark:text-red-400" />
-            <CardTitle className="text-base font-bold">سجل المصروفات</CardTitle>
+            <CardTitle className="text-base font-bold">{t("expensesPage.tableTitle")}</CardTitle>
             {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
           </div>
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5 h-9">
             <Plus className="w-4 h-4" />
-            مصروف جديد
+            {t("expensesPage.addNew")}
           </Button>
         </CardHeader>
 
@@ -474,13 +576,13 @@ export function ExpensesTab() {
           <table className="w-full text-right text-sm min-w-[max(700px,100%)]">
             <thead className="bg-secondary/50 text-muted-foreground text-xs">
               <tr className="border-b border-border">
-                <th className="px-5 py-3 font-medium">التاريخ</th>
-                <th className="px-5 py-3 font-medium">الوصف</th>
-                <th className="px-5 py-3 font-medium">التصنيف</th>
-                <th className="px-5 py-3 font-medium">المورد</th>
-                <th className="px-5 py-3 font-medium">المبلغ ({curr})</th>
-                <th className="px-5 py-3 font-medium text-center">إيصال</th>
-                <th className="px-5 py-3 font-medium text-center">إجراءات</th>
+                <th className="px-5 py-3 font-medium">{t("expensesPage.table.date")}</th>
+                <th className="px-5 py-3 font-medium">{t("expensesPage.table.description")}</th>
+                <th className="px-5 py-3 font-medium">{t("expensesPage.table.category")}</th>
+                <th className="px-5 py-3 font-medium">{t("expensesPage.table.vendor")}</th>
+                <th className="px-5 py-3 font-medium">{t("expensesPage.table.amount")} ({curr})</th>
+                <th className="px-5 py-3 font-medium text-center">{t("expensesPage.table.receipt")}</th>
+                <th className="px-5 py-3 font-medium text-center">{t("expensesPage.table.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -489,18 +591,20 @@ export function ExpensesTab() {
                   categories.find(c => c.id === expense.categoryId || c.id === expense.category || c.name === expense.category) ??
                   categories[categories.length - 1] ??
                   MOCK_CATEGORIES[MOCK_CATEGORIES.length - 1];
-                const dateStr = expense.expenseDate ?? expense.date ?? "";
+                const dateStr    = expense.expenseDate ?? expense.date ?? "";
                 const isDeleting = deleteBusy && deleteId === expense.id;
 
                 return (
                   <tr key={expense.id} className="hover:bg-secondary/30 transition-colors group">
                     <td className="px-5 py-3.5 text-muted-foreground whitespace-nowrap">
-                      {safeFormatDate(dateStr)}
+                      {safeFormatDate(dateStr, locale)}
                     </td>
                     <td className="px-5 py-3.5 font-medium max-w-[180px] truncate">
                       <span title={expense.description}>{expense.description}</span>
                       {expense.isRecurring && (
-                        <span className="ms-1.5 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">متكرر</span>
+                        <span className="ms-1.5 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+                          {t("expensesPage.recurringBadge")}
+                        </span>
                       )}
                     </td>
                     <td className="px-5 py-3.5">
@@ -517,8 +621,8 @@ export function ExpensesTab() {
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <button
-                        onClick={() => setReceiptTarget(expense)}
-                        title={expense.receiptUrl ? "عرض/تعديل الإيصال" : "رفع إيصال"}
+                        onClick={() => expense.receiptUrl ? setViewerTarget(expense) : setReceiptTarget(expense)}
+                        title={expense.receiptUrl ? t("expensesPage.receipt.viewEdit") : t("expensesPage.receipt.uploadTooltip")}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary transition-colors"
                       >
                         {expense.receiptUrl
@@ -531,20 +635,16 @@ export function ExpensesTab() {
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => setEditTarget(expense)}
-                          title="تعديل"
+                          title={t("expensesPage.editTooltip")}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary transition-colors"
                         >
                           <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                         </button>
                         <button
-                          onClick={() => handleDeleteClick(expense.id)}
+                          onClick={() => setDeleteTarget(expense.id)}
                           disabled={isDeleting}
-                          title={deleteConfirmId === expense.id ? "اضغط مرة أخرى للتأكيد" : "حذف"}
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-                            deleteConfirmId === expense.id
-                              ? "bg-destructive/10 text-destructive"
-                              : "hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                          }`}
+                          title={t("expensesPage.deleteTooltip")}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                         >
                           {isDeleting
                             ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -560,10 +660,10 @@ export function ExpensesTab() {
                 <tr>
                   <td colSpan={7} className="text-center text-muted-foreground py-12">
                     <TrendingDown className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                    <p>لم يتم تسجيل مصروفات بعد</p>
+                    <p>{t("expensesPage.noExpenses")}</p>
                     <Button onClick={() => setCreateOpen(true)} variant="outline" size="sm" className="mt-3 gap-1.5">
                       <Plus className="w-4 h-4" />
-                      أضف أول مصروف
+                      {t("expensesPage.addFirst")}
                     </Button>
                   </td>
                 </tr>
@@ -579,7 +679,7 @@ export function ExpensesTab() {
         onOpenChange={setCreateOpen}
         categories={categories}
         businessId={businessId ?? ""}
-        userId={userId ?? ""}
+        userId={userId}
         currency={curr}
         onSaved={handleSaved}
       />
@@ -589,10 +689,17 @@ export function ExpensesTab() {
         onOpenChange={o => { if (!o) setEditTarget(null); }}
         categories={categories}
         businessId={businessId ?? ""}
-        userId={userId ?? ""}
+        userId={userId}
         currency={curr}
         editing={editTarget ?? undefined}
         onSaved={(expense, isNew) => { handleSaved(expense, isNew); setEditTarget(null); }}
+      />
+
+      <ReceiptViewerModal
+        open={!!viewerTarget}
+        onOpenChange={o => { if (!o) setViewerTarget(null); }}
+        expense={viewerTarget}
+        onReplace={() => { setReceiptTarget(viewerTarget); setViewerTarget(null); }}
       />
 
       <UploadReceiptModal
@@ -600,7 +707,7 @@ export function ExpensesTab() {
         onOpenChange={o => { if (!o) setReceiptTarget(null); }}
         expense={receiptTarget}
         businessId={businessId ?? ""}
-        userId={userId ?? ""}
+        userId={userId}
         onUploaded={handleReceiptUploaded}
       />
     </div>

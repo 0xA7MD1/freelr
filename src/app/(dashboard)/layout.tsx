@@ -37,11 +37,15 @@ export default function DashboardLayout({
         <Sidebar onLogout={logout} />
       </aside>
 
-      <div className="flex flex-col">
+      <div className="flex flex-col h-screen">
         <TopBar onLogout={logout} />
-        <main className="flex flex-1 flex-col gap-6 p-4 lg:p-8 pb-20 overflow-auto">
+        <main className="flex flex-1 flex-col gap-6 p-4 lg:p-8 overflow-auto">
           {children}
         </main>
+        <footer className="shrink-0 border-t bg-card px-6 py-3 flex items-center justify-between text-xs text-muted-foreground">
+          <span>© {new Date().getFullYear()} Freelr. جميع الحقوق محفوظة.</span>
+          <span className="hidden sm:block">صُنع بحب للمستقلين العرب</span>
+        </footer>
       </div>
     </div>
   );

@@ -1,45 +1,9 @@
+"use client";
+
 import { Github, Instagram, Linkedin, Twitter } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Logo } from "@/components/shared/ui/logo";
-
-interface FooterLink {
-  label: string;
-  href: string;
-}
-
-interface FooterColumn {
-  title: string;
-  links: FooterLink[];
-}
-
-const COLUMNS: FooterColumn[] = [
-  {
-    title: "المنتج",
-    links: [
-      { label: "المميزات", href: "#features" },
-      { label: "كيف تعمل المنصة", href: "#how-it-works" },
-      { label: "باقات الأسعار", href: "#pricing" },
-      { label: "تحديثات المنصة", href: "#" },
-    ],
-  },
-  {
-    title: "المصادر",
-    links: [
-      { label: "المدونة", href: "#" },
-      { label: "مركز المساعدة", href: "#" },
-      { label: "دليل المستقلين", href: "#" },
-      { label: "أدوات مجانية", href: "#" },
-    ],
-  },
-  {
-    title: "تواصل وقانوني",
-    links: [
-      { label: "تواصل معنا", href: "#" },
-      { label: "سياسة الخصوصية", href: "#" },
-      { label: "الشروط والأحكام", href: "#" },
-    ],
-  },
-];
+import { useT } from "@/lib/i18n";
 
 const SOCIALS: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: Twitter, label: "Twitter", href: "#" },
@@ -49,7 +13,37 @@ const SOCIALS: { icon: LucideIcon; label: string; href: string }[] = [
 ];
 
 export function LandingFooter() {
+  const t = useT();
   const year = new Date().getFullYear();
+
+  const columns = [
+    {
+      titleKey: "landing.footer.product",
+      links: [
+        { labelKey: "landing.footer.featuresLink", href: "#features" },
+        { labelKey: "landing.footer.howItWorksLink", href: "#how-it-works" },
+        { labelKey: "landing.footer.pricingLink", href: "#pricing" },
+        { labelKey: "landing.footer.updatesLink", href: "#" },
+      ],
+    },
+    {
+      titleKey: "landing.footer.resources",
+      links: [
+        { labelKey: "landing.footer.blog", href: "#" },
+        { labelKey: "landing.footer.helpCenter", href: "#" },
+        { labelKey: "landing.footer.guide", href: "#" },
+        { labelKey: "landing.footer.tools", href: "#" },
+      ],
+    },
+    {
+      titleKey: "landing.footer.legal",
+      links: [
+        { labelKey: "landing.footer.contact", href: "#" },
+        { labelKey: "landing.footer.privacy", href: "#" },
+        { labelKey: "landing.footer.terms", href: "#" },
+      ],
+    },
+  ];
 
   return (
     <footer className="bg-slate-900 text-slate-400 pt-20 pb-10 relative z-10">
@@ -61,7 +55,7 @@ export function LandingFooter() {
               <span className="text-2xl font-bold tracking-tight">Freelr</span>
             </div>
             <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
-              المنصة العربية الأولى المصممة خصيصاً للمستقلين لتسهيل إدارة أعمالهم ومشاريعهم وفواتيرهم بكل احترافية.
+              {t("landing.footer.description")}
             </p>
             <div className="flex items-center gap-4 mt-2">
               {SOCIALS.map(({ icon: Icon, label, href }) => (
@@ -77,12 +71,12 @@ export function LandingFooter() {
             </div>
           </div>
 
-          {COLUMNS.map((column) => (
-            <div key={column.title} className="flex flex-col gap-4">
-              <h4 className="text-white font-bold mb-2">{column.title}</h4>
-              {column.links.map((link) => (
-                <a key={link.label} href={link.href} className="hover:text-white transition-colors w-fit">
-                  {link.label}
+          {columns.map((col) => (
+            <div key={col.titleKey} className="flex flex-col gap-4">
+              <h4 className="text-white font-bold mb-2">{t(col.titleKey)}</h4>
+              {col.links.map((link) => (
+                <a key={link.labelKey} href={link.href} className="hover:text-white transition-colors w-fit">
+                  {t(link.labelKey)}
                 </a>
               ))}
             </div>
@@ -91,10 +85,10 @@ export function LandingFooter() {
 
         <div className="pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-sm text-slate-500">
-            &copy; {year} Freelr Workspace. جميع الحقوق محفوظة.
+            &copy; {year} Freelr Workspace. {t("landing.footer.rights")}
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span>صُنع بحب للمستقلين العرب</span>
+            <span>{t("landing.footer.madeWith")}</span>
             <span className="text-red-500">❤️</span>
           </div>
         </div>
