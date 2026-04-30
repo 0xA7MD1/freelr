@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { format, parseISO } from "date-fns";
 import { arSA, enUS } from "date-fns/locale";
 import { Card, CardContent } from "@/components/shared/ui/card";
@@ -211,6 +213,8 @@ export function InvoiceTab() {
   );
   const invoices = data ?? MOCK_INVOICES;
 
+  const pg = usePagination(invoices, 10);
+
   // Modal states
   const [createOpen, setCreateOpen]   = useState(false);
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
@@ -256,18 +260,21 @@ export function InvoiceTab() {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label={t("invoicesPage.stats.total")}      value={String(stats.count)}     sub={t("invoicesPage.stats.invoiceUnit")} />
-        <StatCard label={t("invoicesPage.stats.grandTotal")} value={fmtAmount(stats.total)}  sub={cur} />
-        <StatCard label={t("invoicesPage.stats.unpaid")}     value={fmtAmount(stats.unpaid)} sub={cur} accent="amber" />
-        <StatCard label={t("invoicesPage.stats.overdue")}    value={String(stats.overdue)}   sub={t("invoicesPage.stats.invoiceUnit")} accent="red" />
+        <StatCard label={t("invoicesPage.stats.total")}      value={String(stats.count)}     sub={t("invoicesPage.stats.invoiceUnit")} Icon={Receipt}        iconColors="bg-[#0052FC]/10 text-[#0052FC]" />
+        <StatCard label={t("invoicesPage.stats.grandTotal")} value={fmtAmount(stats.total)}  sub={cur}                                  Icon={CreditCard} />
+        <StatCard label={t("invoicesPage.stats.unpaid")}     value={fmtAmount(stats.unpaid)} sub={cur}                          accent="amber" Icon={Clock} />
+        <StatCard label={t("invoicesPage.stats.overdue")}    value={String(stats.overdue)}   sub={t("invoicesPage.stats.invoiceUnit")} accent="red" Icon={TriangleAlert} />
       </div>
 
       {/* Invoices table */}
       <Card className="shadow-sm border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex justify-between items-center gap-4 flex-wrap">
-          <h3 className="font-bold text-base">{t("invoicesPage.listTitle")}</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <Receipt className="w-5 h-5 text-[#0052FC]" />
+            <h3 className="font-bold text-base">{t("invoicesPage.listTitle")}</h3>
             {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               onClick={() => setCreateOpen(true)}
               className="gap-2 bg-[#0052FC] hover:bg-[#0052FC]/90 text-white h-9 px-4 rounded-lg font-bold text-sm"
@@ -277,7 +284,7 @@ export function InvoiceTab() {
           </div>
         </div>
 
-        {invoices.length === 0 ? (
+        {pg.total === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
             <Receipt className="w-10 h-10 opacity-30" />
             <p className="text-sm">{t("invoicesPage.noInvoices")}</p>
@@ -300,7 +307,7 @@ export function InvoiceTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {invoices.map((inv) => {
+                {pg.paged.map((inv) => {
                   const sm = getStatus(inv.status);
                   const isDeleting = deletingId === inv.id;
 
@@ -353,6 +360,16 @@ export function InvoiceTab() {
             </table>
           </div>
         )}
+        <DataPagination
+          page={pg.page}
+          totalPages={pg.totalPages}
+          total={pg.total}
+          from={pg.from}
+          to={pg.to}
+          pageSize={pg.pageSize}
+          onPageChange={pg.goTo}
+          onPageSizeChange={pg.changePageSize}
+        />
       </Card>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
@@ -428,19 +445,33 @@ export function InvoiceTab() {
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, accent,
+  label, value, sub, accent, Icon, iconColors,
 }: {
   label: string; value: string; sub: string; accent?: "amber" | "red";
+  Icon?: React.ComponentType<{ className?: string }>;
+  iconColors?: string;
 }) {
   const cls = accent === "red"
     ? "text-red-600 dark:text-red-400"
     : accent === "amber"
     ? "text-amber-600 dark:text-amber-400"
     : "text-foreground";
+  const ic = iconColors ?? (
+    accent === "red"   ? "bg-red-500/10 text-red-500" :
+    accent === "amber" ? "bg-amber-500/10 text-amber-500" :
+    "bg-secondary text-muted-foreground"
+  );
   return (
     <Card className="shadow-sm border-border">
       <CardContent className="pt-4 pb-4">
-        <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
+        <div className="flex items-start justify-between mb-2">
+          <p className="text-xs text-muted-foreground truncate pe-2">{label}</p>
+          {Icon && (
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ic}`}>
+              <Icon className="w-4 h-4" />
+            </div>
+          )}
+        </div>
         <p className={`text-xl font-bold font-mono truncate ${cls}`}>{value}</p>
         <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">{sub}</p>
       </CardContent>

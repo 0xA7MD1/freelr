@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { Card, CardContent } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
 import { Badge } from "@/components/shared/ui/badge";
@@ -45,6 +47,8 @@ export function AlertsTab() {
 
   const alerts = data ?? [];
   const unreadCount = alerts.filter((a) => !a.isRead).length;
+
+  const pg = usePagination(alerts, 10);
 
   const SEVERITY_CONFIG: Record<SeverityKey, { labelKey: string; badgeClass: string; dotClass: string }> = {
     Info:     { labelKey: "alerts.severity.info",     badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",       dotClass: "bg-blue-500" },
@@ -182,9 +186,9 @@ export function AlertsTab() {
         </div>
       )}
 
-      {alerts.length > 0 && (
+      {pg.total > 0 && (
         <div className="space-y-3">
-          {alerts.map((alert) => {
+          {pg.paged.map((alert) => {
             const severityMeta = getSeverityConfig(alert.severity);
             const typeMeta = getTypeConfig(alert.alertType);
             const Icon = typeMeta.Icon;
@@ -235,6 +239,17 @@ export function AlertsTab() {
               </Card>
             );
           })}
+          <DataPagination
+            page={pg.page}
+            totalPages={pg.totalPages}
+            total={pg.total}
+            from={pg.from}
+            to={pg.to}
+            pageSize={pg.pageSize}
+            onPageChange={pg.goTo}
+            onPageSizeChange={pg.changePageSize}
+            className="rounded-xl border border-border mt-2"
+          />
         </div>
       )}
 

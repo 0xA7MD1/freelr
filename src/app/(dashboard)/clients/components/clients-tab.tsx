@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Card } from "@/components/shared/ui/card";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { Input } from "@/components/shared/ui/input";
 import { Label } from "@/components/shared/ui/label";
 import { Button } from "@/components/shared/ui/button";
@@ -61,6 +63,8 @@ export function ClientsTab() {
   );
 
   const clients = data ?? MOCK_CLIENTS;
+
+  const pg = usePagination(clients, 10);
 
   const [mode, setMode] = useState<Mode>("add");
   const [formOpen, setFormOpen] = useState(false);
@@ -376,13 +380,16 @@ export function ClientsTab() {
       {/* ── Clients List ───────────────────────────────────────────────────── */}
       <Card className="shadow-sm border-border overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b border-border bg-card flex justify-between items-center shrink-0">
-          <h4 className="font-bold text-[clamp(0.875rem,2.5vw,1rem)]">
-            {t("clientsPage.listTitle")}
-          </h4>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <UserRound className="w-5 h-5 text-primary" />
+            <h4 className="font-bold text-[clamp(0.875rem,2.5vw,1rem)]">
+              {t("clientsPage.listTitle")}
+            </h4>
             {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+          </div>
+          <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground bg-secondary/60 px-2.5 py-0.5 rounded-full font-medium">
-              {clients.length} {t("clientsPage.countSuffix")}
+              {pg.total} {t("clientsPage.countSuffix")}
             </span>
             <Button size="sm" onClick={openCreateForm} className="h-9 gap-1.5 font-bold">
               <Plus className="w-4 h-4" />
@@ -413,7 +420,7 @@ export function ClientsTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {clients.map((client) => {
+                {pg.paged.map((client) => {
                   const isDeleting = deletingId === client.id;
                   const isEditing = editingId === client.id;
 
@@ -481,6 +488,16 @@ export function ClientsTab() {
             </table>
           </div>
         )}
+        <DataPagination
+          page={pg.page}
+          totalPages={pg.totalPages}
+          total={pg.total}
+          from={pg.from}
+          to={pg.to}
+          pageSize={pg.pageSize}
+          onPageChange={pg.goTo}
+          onPageSizeChange={pg.changePageSize}
+        />
       </Card>
     </div>
   );

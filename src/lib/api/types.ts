@@ -269,6 +269,7 @@ export interface IncomeEntry {
   category?: string;
   categoryId?: string;
   categoryName?: string;
+  clientId?: string;
   clientName?: string;
   receiptUrl?: string | null;
   notes?: string | null;

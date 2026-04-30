@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { format, parseISO } from "date-fns";
 import { arSA, enUS } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
@@ -22,6 +24,8 @@ import {
   DialogFooter,
 } from "@/components/shared/ui/dialog";
 import {
+  BarChart2,
+  Briefcase,
   Coffee,
   Edit2,
   ExternalLink,
@@ -29,12 +33,12 @@ import {
   Monitor,
   Paperclip,
   Plus,
+  RefreshCw,
   ShoppingBag,
   Trash2,
   TrendingDown,
   Upload,
   Zap,
-  Briefcase,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFetch } from "@/lib/hooks/use-fetch";
@@ -459,6 +463,8 @@ export function ExpensesTab() {
 
   const expenses = data ?? MOCK_EXPENSES;
 
+  const pg = usePagination(expenses, 10);
+
   const categories = apiOn
     ? (categoriesData ?? []).map((c, i) => ({
         id: c.id,
@@ -529,7 +535,12 @@ export function ExpensesTab() {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.totalLabel")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("expensesPage.totalLabel")}</p>
+              <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center shrink-0">
+                <TrendingDown className="w-4 h-4 text-destructive dark:text-red-400" />
+              </div>
+            </div>
             <p className="text-2xl font-bold font-mono text-destructive dark:text-red-400">
               {totalSpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -538,7 +549,12 @@ export function ExpensesTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.avgLabel")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("expensesPage.avgLabel")}</p>
+              <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                <BarChart2 className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
             <p className="text-2xl font-bold font-mono">
               {avgExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -547,7 +563,12 @@ export function ExpensesTab() {
         </Card>
         <Card className="shadow-sm border-border col-span-2 md:col-span-1">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("expensesPage.recurringLabel")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("expensesPage.recurringLabel")}</p>
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                <RefreshCw className="w-4 h-4 text-blue-500" />
+              </div>
+            </div>
             <p className="text-2xl font-bold">
               {recurring}
               <span className="text-sm font-normal text-muted-foreground ms-1">
@@ -586,7 +607,7 @@ export function ExpensesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {expenses.map(expense => {
+              {pg.paged.map(expense => {
                 const cat =
                   categories.find(c => c.id === expense.categoryId || c.id === expense.category || c.name === expense.category) ??
                   categories[categories.length - 1] ??
@@ -656,7 +677,7 @@ export function ExpensesTab() {
                   </tr>
                 );
               })}
-              {expenses.length === 0 && (
+              {pg.total === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-muted-foreground py-12">
                     <TrendingDown className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -671,6 +692,16 @@ export function ExpensesTab() {
             </tbody>
           </table>
         </div>
+        <DataPagination
+          page={pg.page}
+          totalPages={pg.totalPages}
+          total={pg.total}
+          from={pg.from}
+          to={pg.to}
+          pageSize={pg.pageSize}
+          onPageChange={pg.goTo}
+          onPageSizeChange={pg.changePageSize}
+        />
       </Card>
 
       {/* ── Modals ── */}
