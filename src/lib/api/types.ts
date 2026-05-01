@@ -278,7 +278,6 @@ export interface IncomeEntry {
   source?: string;
   /** UI alias */
   incomeDate?: string;
-  clientId?: string; // ✅ تمت الإضافة (هذا هو سبب المشكلة)
 }
 
 export interface CreateIncomePayload {
