@@ -58,6 +58,7 @@ interface IncomeFormModalProps {
   editing?: IncomeEntry;
   onSaved: (income: IncomeEntry, isNew: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
+  clientId?: string;
 }
 
 function IncomeFormModal({
