@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { Card, CardContent } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
 import {
@@ -60,6 +62,8 @@ export function NotificationsTab() {
 
   const notifications = data ?? [];
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const pg = usePagination(notifications, 10);
 
   const handleMarkRead = async (n: NotificationApi) => {
     if (n.isRead) return;
@@ -155,9 +159,9 @@ export function NotificationsTab() {
         </div>
       )}
 
-      {notifications.length > 0 && (
+      {pg.total > 0 && (
         <div className="space-y-3">
-          {notifications.map((n) => {
+          {pg.paged.map((n) => {
             const meta = priorityMeta(n.priority);
             const Icon = meta.icon;
             const ChannelIcon = channelIcon(n.type);
@@ -205,6 +209,17 @@ export function NotificationsTab() {
               </Card>
             );
           })}
+          <DataPagination
+            page={pg.page}
+            totalPages={pg.totalPages}
+            total={pg.total}
+            from={pg.from}
+            to={pg.to}
+            pageSize={pg.pageSize}
+            onPageChange={pg.goTo}
+            onPageSizeChange={pg.changePageSize}
+            className="rounded-xl border border-border mt-2"
+          />
         </div>
       )}
     </div>

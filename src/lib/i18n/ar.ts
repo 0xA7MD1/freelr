@@ -674,4 +674,13 @@ export const ar = {
     riskHigh: "مرتفع",
     riskCritical: "حرج",
   },
+  pagination: {
+    showing: "عرض",
+    of: "من",
+    results: "نتيجة",
+    rowsPerPage: "صفوف في الصفحة",
+    previous: "السابق",
+    next: "التالي",
+    page: "صفحة",
+  },
 };

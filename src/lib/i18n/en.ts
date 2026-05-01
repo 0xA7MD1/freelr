@@ -674,4 +674,13 @@ export const en = {
     riskHigh: "High",
     riskCritical: "Critical",
   },
+  pagination: {
+    showing: "Showing",
+    of: "of",
+    results: "results",
+    rowsPerPage: "Rows per page",
+    previous: "Previous",
+    next: "Next",
+    page: "Page",
+  },
 };

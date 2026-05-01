@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { DataPagination } from "@/components/shared/ui/data-pagination";
+import { usePagination } from "@/lib/hooks/use-pagination";
 import { format, parseISO } from "date-fns";
 import { arSA, enUS } from "date-fns/locale";
-import { CalendarDays, Edit2, Loader2, Plus, Search, Trash2, TrendingUp, WalletCards } from "lucide-react";
+import { BarChart2, CalendarDays, Edit2, Hash, Loader2, Plus, Search, Trash2, TrendingUp, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shared/ui/card";
@@ -367,6 +369,8 @@ export function IncomeTab() {
     });
   }, [income, query]);
 
+  const pg = usePagination(filteredIncome, 10);
+
   const totalIncome = income.reduce((sum, entry) => sum + (entry.amount ?? 0), 0);
   const averageIncome = income.length ? totalIncome / income.length : 0;
   const latestIncome = income.reduce<IncomeEntry | null>((latest, entry) => {
@@ -418,7 +422,12 @@ export function IncomeTab() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.total")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("incomePage.stats.total")}</p>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
             <p className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
               {totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -427,7 +436,12 @@ export function IncomeTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.average")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("incomePage.stats.average")}</p>
+              <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                <BarChart2 className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
             <p className="text-2xl font-bold font-mono">
               {averageIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               <span className="text-sm font-sans font-normal text-muted-foreground ms-1">{curr}</span>
@@ -436,13 +450,23 @@ export function IncomeTab() {
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.count")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("incomePage.stats.count")}</p>
+              <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                <Hash className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
             <p className="text-2xl font-bold">{income.length}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm border-border">
           <CardContent className="pt-5 pb-4">
-            <p className="text-xs text-muted-foreground mb-1">{t("incomePage.stats.latest")}</p>
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs text-muted-foreground">{t("incomePage.stats.latest")}</p>
+              <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                <CalendarDays className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
             <p className="text-sm font-medium truncate">{latestIncome?.description ?? t("incomePage.stats.noLatest")}</p>
             <p className="text-xs text-muted-foreground mt-1">{latestIncome ? safeFormatDate(getIncomeDate(latestIncome), locale) : "-"}</p>
           </CardContent>
@@ -498,7 +522,7 @@ export function IncomeTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filteredIncome.map((entry) => {
+              {pg.paged.map((entry) => {
                 const isDeleting = deleteBusy && deleteId === entry.id;
                 return (
                   <tr key={entry.id} className="hover:bg-secondary/30 transition-colors">
@@ -549,7 +573,7 @@ export function IncomeTab() {
                   </tr>
                 );
               })}
-              {filteredIncome.length === 0 && (
+              {pg.total === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center text-muted-foreground py-12">
                     <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -564,6 +588,16 @@ export function IncomeTab() {
             </tbody>
           </table>
         </div>
+        <DataPagination
+          page={pg.page}
+          totalPages={pg.totalPages}
+          total={pg.total}
+          from={pg.from}
+          to={pg.to}
+          pageSize={pg.pageSize}
+          onPageChange={pg.goTo}
+          onPageSizeChange={pg.changePageSize}
+        />
       </Card>
 
       <IncomeFormModal
