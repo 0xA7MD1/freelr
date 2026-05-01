@@ -133,7 +133,7 @@ function LoginForm({ onSubmit, onForgot, onSwitchToRegister, showPassword, setSh
     formState: { errors, isSubmitting },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "", remember: false },
+    defaultValues: { email: "user@gmail.com", password: "Admin@26", remember: false },
   });
 
   return (
